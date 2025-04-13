@@ -89,6 +89,7 @@ contract LibraryDApp {
         require(users[msg.sender].reputation >= MIN_BORROW_REPUTATION, "LibraryDApp: reputation trop basse pour emprunter");
         _;
     }
+    
 
     // Constructeur : initialise l'administrateur comme le déployeur du contrat
     constructor() { 
@@ -253,4 +254,6 @@ contract LibraryDApp {
         users[_user].reputation = _newReputation;
         emit ReputationUpdated(_user, _newReputation);
     }
+     uint Variables = 100;
+
 }
