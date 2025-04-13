@@ -1,0 +1,49 @@
+{
+  "name": "library-dapp",
+  "version": "1.0.0",
+  "description": "Library DApp using Truffle",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "truffle test",
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "eject": "react-scripts eject"
+  },
+  "dependencies": {
+    "@truffle/hdwallet-provider": "^2.1.15",
+    "chai": "^4.3.7",
+    "chai-as-promised": "^7.1.1",
+    "ipfs-http-client": "^60.0.1",
+    "lucide-react": "^0.294.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-scripts": "^5.0.1",
+    "truffle": "^5.11.5",
+    "web-vitals": "^4.2.4",
+    "web3": "^1.10.0"
+  },
+  "devDependencies": {
+    "@openzeppelin/contracts": "^4.9.3",
+    "@openzeppelin/test-helpers": "^0.5.16",
+    "autoprefixer": "^10.4.16",
+    "mocha": "^10.2.0",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "truffle-assertions": "^0.9.2"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  direction: rtl;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Styles personnalisés pour BiblioChain */
+
+/* Animation pour les livres */
+.book-card {
+  transform: perspective(1000px) rotateY(0deg);
+  transition: transform 0.5s ease-in-out;
+}
+
+.book-card:hover {
+  transform: perspective(1000px) rotateY(5deg);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Animation pour les badges de disponibilité */
+.availability-badge {
+  transition: all 0.3s ease;
+}
+
+.availability-badge:hover {
+  transform: scale(1.1);
+}
+
+/* Animation pour le graphique de réputation */
+.reputation-chart .circle {
+  stroke-dasharray: 0, 100;
+  transition: stroke-dasharray 1.5s ease-in-out;
+}
+
+/* Effets de lueur pour les boutons */
+.btn-glow {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.btn-glow:after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  z-index: -1;
+  transition: left 0.7s ease-in-out;
+}
+
+.btn-glow:hover:after {
+  left: 100%;
+}
+
+/* Style pour l'animation de confetti */
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.confetti {
+  position: fixed;
+  width: 10px;
+  height: 10px;
+  background-color: #FFD700;
+  opacity: 0;
+  animation: confetti-fall 5s ease-in-out forwards;
+}
+
+/* Styles spécifiques pour la section admin */
+.admin-section {
+  border-left: 4px solid #6A1B9A;
+  transition: box-shadow 0.3s ease;
+}
+
+.admin-section:hover {
+  box-shadow: 0 4px 20px rgba(106, 27, 154, 0.15);
+}
+
+/* Style pour l'effet de survol des images de couverture des livres */
+.book-cover {
+  transition: all 0.5s ease;
+}
+
+.book-cover:hover {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+/* Palette de couleurs pour références directes */
+:root {
+  --academic-blue: #2A3B8C;
+  --off-white: #F8F9FA;
+  --gold-accent: #FFD700;
+  --trust-green: #4CAF50;
+  --alert-red: #E53935;
+  --admin-purple: #6A1B9A;
+}
+
+/* Styles pour améliorer la visualisation sur mobile */
+@media (max-width: 768px) {
+  .book-card {
+    transform: none;
+  }
+  
+  .book-card:hover {
+    transform: none;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+}
