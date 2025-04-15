@@ -4,16 +4,16 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  direction: rtl;
+  /* direction: rtl; */
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
     monospace;
 }
 
@@ -92,13 +92,18 @@ code {
 }
 
 .btn-glow:after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
   z-index: -1;
   transition: left 0.7s ease-in-out;
 }
@@ -123,14 +128,14 @@ code {
   position: fixed;
   width: 10px;
   height: 10px;
-  background-color: #FFD700;
+  background-color: #ffd700;
   opacity: 0;
   animation: confetti-fall 5s ease-in-out forwards;
 }
 
 /* Styles spécifiques pour la section admin */
 .admin-section {
-  border-left: 4px solid #6A1B9A;
+  border-left: 4px solid #6a1b9a;
   transition: box-shadow 0.3s ease;
 }
 
@@ -150,12 +155,12 @@ code {
 
 /* Palette de couleurs pour références directes */
 :root {
-  --academic-blue: #2A3B8C;
-  --off-white: #F8F9FA;
-  --gold-accent: #FFD700;
-  --trust-green: #4CAF50;
-  --alert-red: #E53935;
-  --admin-purple: #6A1B9A;
+  --academic-blue: #2a3b8c;
+  --off-white: #f8f9fa;
+  --gold-accent: #ffd700;
+  --trust-green: #4caf50;
+  --alert-red: #e53935;
+  --admin-purple: #6a1b9a;
 }
 
 /* Styles pour améliorer la visualisation sur mobile */
@@ -163,7 +168,7 @@ code {
   .book-card {
     transform: none;
   }
-  
+
   .book-card:hover {
     transform: none;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);

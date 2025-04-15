@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, Book, User, LogOut, Menu, X, BookOpen, Clock, CheckCircle, AlertTriangle, Plus, Upload } from 'lucide-react';
 import web3Service from './Web3Service';
 import ipfsService from './IPFSService';
+import Web3 from 'web3';
+import MetaMaskConnect from './components/MetaMaskConnect';
 
 const LibraryDApp = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -13,7 +15,7 @@ const LibraryDApp = () => {
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGanache, setIsGanache] = useState(false);
-  
+
   // متغيرات الحالة لإضافة كتاب
   const [newBook, setNewBook] = useState({
     title: '',
@@ -29,12 +31,12 @@ const LibraryDApp = () => {
   const [ipfsHash, setIpfsHash] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef(null);
-  
+
   // Définir la direction RTL au chargement de la page
-  useEffect(() => {
-    document.documentElement.dir = 'rtl';
-  }, []);
-  
+  // useEffect(() => {
+  //   document.documentElement.dir = 'rtl';
+  // }, []);
+
   // Simuler des données pour la maquette
   const recentBooks = [
     { id: 1, title: "Principes d'Économie", author: "Gregory Mankiw", isAvailable: true, ipfsHash: "QmX...", category: "Économie", pageCount: 528, publishedDate: "2019-05-10", isbn: "978-2-7590-2369-1" },
@@ -42,35 +44,45 @@ const LibraryDApp = () => {
     { id: 3, title: "Physique Quantique", author: "Claude Cohen-Tannoudji", isAvailable: true, ipfsHash: "QmZ...", category: "Sciences", pageCount: 624, publishedDate: "2018-09-15", isbn: "978-2-1007-1288-0" },
     { id: 4, title: "Histoire de l'Art", author: "Ernst Gombrich", isAvailable: true, ipfsHash: "QmA...", category: "Art", pageCount: 412, publishedDate: "2020-01-30", isbn: "978-2-0814-1212-2" }
   ];
-  
+
   const userLoans = [
     { id: 101, bookId: 5, title: "Introduction à la Sociologie", author: "Anthony Giddens", dueDate: "2025-04-20" },
     { id: 102, bookId: 7, title: "Littérature Française du XXe siècle", author: "Michel Raimond", dueDate: "2025-04-15" }
   ];
-  
+
   // Afficher une notification
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
-    
+
     // Faire disparaître la notification après 5 secondes
     setTimeout(() => {
       setNotification(null);
     }, 5000);
   };
-  
+
   // Fonction pour se connecter à MetaMask
   const connectToMetaMask = async () => {
     try {
       setIsLoading(true);
+      if (!window.ethereum) {
+        showNotification("MetaMask n'est pas installé", "error");
+        return;
+      }
       const success = await web3Service.initialize();
       if (success) {
         setIsConnected(true);
         setAccount(web3Service.getAccount());
-        
+
+        const isValidAddress = (address) => Web3.utils.isAddress(address);
+        if (!isValidAddress(account)) {
+          showNotification("Adresse Ethereum invalide", "error");
+          return;
+        }
+
         // Vérifier si l'utilisateur est enregistré
         const registered = await web3Service.isUserRegistered();
         setIsRegistered(registered);
-        
+
         if (registered) {
           // Récupérer la réputation de l'utilisateur
           const reputation = await web3Service.getUserReputation();
@@ -89,7 +101,7 @@ const LibraryDApp = () => {
       setIsLoading(false);
     }
   };
-  
+
   // معالج تغيير حقول إضافة الكتاب الجديد
   const handleNewBookChange = (e) => {
     const { name, value } = e.target;
@@ -98,7 +110,32 @@ const LibraryDApp = () => {
       [name]: value
     }));
   };
-  
+  //  (For test)معالج تغيير حالة تسجيل المستخدم
+  const handleBorrowBook = async (bookId) => {
+    if (!isConnected) {
+      showNotification("Veuillez vous connecter avec MetaMask", "warning");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      // Call the smart contract method to borrow the book
+      const success = await web3Service.borrowBook(bookId);
+      if (success) {
+        showNotification("Livre emprunté avec succès!", "success");
+        // Optionally, update the state to reflect the borrowed book
+      } else {
+        showNotification("Échec de l'emprunt du livre", "error");
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'emprunt du livre:", error);
+      showNotification("Erreur lors de l'emprunt: " + error.message, "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // معالج تغيير صورة الغلاف
   const handleCoverImageChange = (e) => {
     const file = e.target.files[0];
@@ -112,19 +149,19 @@ const LibraryDApp = () => {
       reader.readAsDataURL(file);
     }
   };
-  
+
   // تحميل الكتاب والصورة إلى IPFS
   const uploadToIPFS = async () => {
     if (!bookCover) {
       showNotification("Veuillez sélectionner une image de couverture", "warning");
       return null;
     }
-    
+
     setIsUploading(true);
     try {
       // تحميل بيانات الكتاب والصورة إلى IPFS
       const result = await ipfsService.uploadBookData(newBook, bookCover);
-      
+
       setIpfsHash(result.metadataHash);
       showNotification("Livre téléchargé sur IPFS avec succès!", "success");
       return result.metadataHash;
@@ -136,7 +173,7 @@ const LibraryDApp = () => {
       setIsUploading(false);
     }
   };
-  
+
   // إضافة كتاب جديد
   const handleAddBook = async () => {
     // التحقق من البيانات
@@ -144,28 +181,28 @@ const LibraryDApp = () => {
       showNotification("Le titre et l'auteur sont obligatoires", "warning");
       return;
     }
-    
+
     if (!isConnected) {
       showNotification("Veuillez vous connecter avec MetaMask", "warning");
       return;
     }
-    
+
     try {
       setIsLoading(true);
-      
+
       // تحميل إلى IPFS أولاً
       const hash = await uploadToIPFS();
       if (!hash) return;
-      
+
       // إضافة الكتاب إلى العقد الذكي
       await web3Service.addBook(
         newBook.title,
         newBook.author,
         hash
       );
-      
+
       showNotification("Livre ajouté avec succès!", "success");
-      
+
       // إعادة تعيين النموذج
       setNewBook({
         title: '',
@@ -186,31 +223,31 @@ const LibraryDApp = () => {
       setIsLoading(false);
     }
   };
-  
+
   // Composant pour afficher les notifications
   const NotificationComponent = () => {
     if (!notification) return null;
-    
+
     const bgColors = {
       success: 'bg-[#4CAF50]/90',
       error: 'bg-[#E53935]/90',
       warning: 'bg-[#FFD700]/90',
       info: 'bg-[#2A3B8C]/90'
     };
-    
+
     const icons = {
       success: <CheckCircle size={20} className="mr-2" />,
       error: <AlertTriangle size={20} className="mr-2" />,
       warning: <AlertTriangle size={20} className="mr-2" />,
       info: <BookOpen size={20} className="mr-2" />
     };
-    
+
     return (
       <div className="fixed bottom-4 right-4 z-50 max-w-md">
         <div className={`${bgColors[notification.type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center`}>
           {icons[notification.type]}
           <span>{notification.message}</span>
-          <button 
+          <button
             onClick={() => setNotification(null)}
             className="ml-4 text-white hover:text-gray-200"
             aria-label="Fermer la notification"
@@ -221,11 +258,11 @@ const LibraryDApp = () => {
       </div>
     );
   };
-  
+
   // Composant pour afficher un indicateur de chargement
   const LoadingIndicator = () => {
     if (!isLoading) return null;
-    
+
     return (
       <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-4 shadow-lg flex items-center">
@@ -235,33 +272,33 @@ const LibraryDApp = () => {
       </div>
     );
   };
-  
+
   const renderHeader = () => (
     <header className="bg-white shadow">
       <div className="container mx-auto px-4 py-3 flex justify-between items-center">
         <div className="flex items-center">
           <div className="text-2xl font-bold text-[#2A3B8C] mr-2">
             <BookOpen size={28} className="inline mr-2" />
-            <a href="#" onClick={(e) => {e.preventDefault(); setActiveTab('home');}} className="hover:text-[#1F2D6B] transition">BiblioChain</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('home'); }} className="hover:text-[#1F2D6B] transition">BiblioChain</a>
           </div>
         </div>
-        
+
         <div className="hidden md:flex items-center space-x-6">
-          <button 
+          <button
             onClick={() => setActiveTab('home')}
             className={`px-3 py-2 ${activeTab === 'home' ? 'text-[#2A3B8C] border-b-2 border-[#2A3B8C]' : 'text-gray-600'}`}
             aria-current={activeTab === 'home' ? 'page' : undefined}
           >
             Accueil
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('catalog')}
             className={`px-3 py-2 ${activeTab === 'catalog' ? 'text-[#2A3B8C] border-b-2 border-[#2A3B8C]' : 'text-gray-600'}`}
             aria-current={activeTab === 'catalog' ? 'page' : undefined}
           >
             Catalogue
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('dashboard')}
             className={`px-3 py-2 ${activeTab === 'dashboard' ? 'text-[#2A3B8C] border-b-2 border-[#2A3B8C]' : 'text-gray-600'}`}
             aria-current={activeTab === 'dashboard' ? 'page' : undefined}
@@ -269,7 +306,7 @@ const LibraryDApp = () => {
             Mon Espace
           </button>
           {/* Bouton Admin visible uniquement pour les administrateurs */}
-          <button 
+          <button
             onClick={() => setActiveTab('admin')}
             className={`px-3 py-2 ${activeTab === 'admin' ? 'text-[#6A1B9A] border-b-2 border-[#6A1B9A]' : 'text-gray-600'}`}
             aria-current={activeTab === 'admin' ? 'page' : undefined}
@@ -277,108 +314,25 @@ const LibraryDApp = () => {
             Admin
           </button>
         </div>
-        
+
         <div className="flex items-center">
-          <div className="hidden md:block mr-4">
-            <div className="flex items-center bg-[#F8F9FA] rounded-full px-3 py-1">
-              <div className={`w-2 h-2 rounded-full ${isGanache ? 'bg-[#FFD700]' : 'bg-[#4CAF50]'} mr-2`} aria-hidden="true"></div>
-              <span className="text-xs text-gray-600 mr-1" title="Adresse Ethereum">{isConnected ? web3Service.shortenAddress(account) : 'Non connecté'}</span>
-              {isConnected && <span className="text-xs font-semibold text-[#4CAF50]" title="Score de réputation">Rep: {userReputation}</span>}
-            </div>
-          </div>
-          
-          {/* Bouton de connexion MetaMask */}
-          {!isConnected ? (
-            <button 
-              className="hidden md:flex items-center text-gray-600 hover:text-[#2A3B8C] mr-4"
-              onClick={connectToMetaMask}
-              aria-label="Se connecter avec MetaMask"
-            >
-              <span className="text-sm">Connecter MetaMask</span>
-            </button>
-          ) : (
-            <button 
-              className="hidden md:flex items-center text-gray-600 hover:text-[#E53935]"
-              aria-label="Déconnexion"
-            >
-              <LogOut size={18} className="mr-1" />
-              <span className="text-sm">Déconnexion</span>
-            </button>
-          )}
-          
-          <button 
-            className="md:hidden text-gray-600" 
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-expanded={mobileMenuOpen}
-            aria-label={mobileMenuOpen ? "Fermer le menu" : "Ouvrir le menu"}
-          >
-            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <MetaMaskConnect
+            onConnect={(account) => {
+              setAccount(account);
+              setIsConnected(true);
+            }}
+            onDisconnect={() => {
+              setAccount(null);
+              setIsConnected(false);
+            }}
+            initialAccount={account}
+          />
+         
         </div>
       </div>
-      
-      {/* Menu mobile */}
-      {mobileMenuOpen && (
-        <div className="md:hidden bg-white border-t">
-          <div className="container mx-auto px-4 py-2">
-            <button 
-              onClick={() => {setActiveTab('home'); setMobileMenuOpen(false)}}
-              className={`block w-full text-right py-2 px-4 hover:bg-[#F8F9FA] ${activeTab === 'home' ? 'text-[#2A3B8C] font-medium' : 'text-gray-600'}`}
-              aria-current={activeTab === 'home' ? 'page' : undefined}
-            >
-              Accueil
-            </button>
-            <button 
-              onClick={() => {setActiveTab('catalog'); setMobileMenuOpen(false)}}
-              className={`block w-full text-right py-2 px-4 hover:bg-[#F8F9FA] ${activeTab === 'catalog' ? 'text-[#2A3B8C] font-medium' : 'text-gray-600'}`}
-              aria-current={activeTab === 'catalog' ? 'page' : undefined}
-            >
-              Catalogue
-            </button>
-            <button 
-              onClick={() => {setActiveTab('dashboard'); setMobileMenuOpen(false)}}
-              className={`block w-full text-right py-2 px-4 hover:bg-[#F8F9FA] ${activeTab === 'dashboard' ? 'text-[#2A3B8C] font-medium' : 'text-gray-600'}`}
-              aria-current={activeTab === 'dashboard' ? 'page' : undefined}
-            >
-              Mon Espace
-            </button>
-            <button 
-              onClick={() => {setActiveTab('admin'); setMobileMenuOpen(false)}}
-              className={`block w-full text-right py-2 px-4 hover:bg-[#F8F9FA] ${activeTab === 'admin' ? 'text-[#6A1B9A] font-medium' : 'text-gray-600'}`}
-              aria-current={activeTab === 'admin' ? 'page' : undefined}
-            >
-              Admin
-            </button>
-            {!isConnected ? (
-              <button 
-                onClick={connectToMetaMask}
-                className="block w-full text-right py-2 px-4 hover:bg-[#F8F9FA] text-[#2A3B8C]"
-              >
-                Connecter MetaMask
-              </button>
-            ) : (
-              <>
-                <div className="flex items-center py-2 px-4">
-                  <div className="w-2 h-2 rounded-full bg-[#4CAF50] mr-2" aria-hidden="true"></div>
-                  <span className="text-xs text-gray-600 mr-1">{web3Service.shortenAddress(account)}</span>
-                  <span className="text-xs font-semibold text-[#4CAF50]">Rep: {userReputation}</span>
-                </div>
-                <button 
-                  className="flex items-center text-[#E53935] py-2 px-4"
-                  onClick={() => {setMobileMenuOpen(false)}}
-                  aria-label="Déconnexion"
-                >
-                  <LogOut size={18} className="mr-2" />
-                  <span>Déconnexion</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </header>
   );
-  
+
   const renderHome = () => (
     <div className="container mx-auto px-4 py-8">
       <div className="bg-[#2A3B8C] text-[#F8F9FA] rounded-lg shadow-md overflow-hidden mb-8">
@@ -386,7 +340,7 @@ const LibraryDApp = () => {
           <div className="p-8 md:w-1/2">
             <h1 className="text-3xl font-bold mb-4">Bibliothèque Universitaire Décentralisée</h1>
             <p className="mb-6">Une solution moderne pour emprunter et gérer des livres universitaires avec transparence et sécurité grâce à la blockchain.</p>
-            <button 
+            <button
               className="bg-[#FFD700] text-[#2A3B8C] px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-yellow-400 transition"
               onClick={() => setActiveTab('catalog')}
               aria-label="Explorer le catalogue de livres"
@@ -399,7 +353,7 @@ const LibraryDApp = () => {
           </div>
         </div>
       </div>
-      
+
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Livres récemment ajoutés</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
         {recentBooks.map(book => (
@@ -414,7 +368,7 @@ const LibraryDApp = () => {
                 <span className={`text-xs font-semibold px-2 py-1 rounded-full ${book.isAvailable ? 'bg-[#4CAF50]/20 text-[#4CAF50]' : 'bg-[#E53935]/20 text-[#E53935]'}`}>
                   {book.isAvailable ? 'Disponible' : 'Emprunté'}
                 </span>
-                <button 
+                <button
                   className={`text-sm px-3 py-1 rounded font-medium ${book.isAvailable ? 'bg-[#2A3B8C] text-white hover:bg-[#1F2D6B]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
                   disabled={!book.isAvailable}
                   onClick={() => handleBorrowBook(book.id)}
@@ -427,7 +381,7 @@ const LibraryDApp = () => {
           </div>
         ))}
       </div>
-      
+
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Comment ça marche</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
@@ -454,27 +408,27 @@ const LibraryDApp = () => {
       </div>
     </div>
   );
-  
+
   const renderCatalog = () => (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-[#2A3B8C] mb-4 md:mb-0">Catalogue des Livres</h1>
         <div className="relative w-full md:w-auto">
-          <input 
-            type="text" 
-            placeholder="Rechercher..." 
+          <input
+            type="text"
+            placeholder="Rechercher..."
             className="w-full md:w-64 pl-10 pr-4 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2A3B8C] focus:border-[#2A3B8C]"
             aria-label="Rechercher des livres"
           />
           <Search size={18} className="absolute left-3 top-3 text-gray-400" aria-hidden="true" />
         </div>
       </div>
-      
+
       <div className="bg-white p-4 rounded-lg shadow-md mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="category-filter">Catégorie</label>
-            <select 
+            <select
               id="category-filter"
               className="w-full border rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-[#2A3B8C] focus:border-[#2A3B8C]"
             >
@@ -488,7 +442,7 @@ const LibraryDApp = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="availability-filter">Disponibilité</label>
-            <select 
+            <select
               id="availability-filter"
               className="w-full border rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-[#2A3B8C] focus:border-[#2A3B8C]"
             >
@@ -498,7 +452,7 @@ const LibraryDApp = () => {
             </select>
           </div>
           <div className="flex items-end">
-            <button 
+            <button
               className="bg-[#2A3B8C] text-white px-4 py-2 rounded-md font-medium hover:bg-[#1F2D6B] transition w-full flex items-center justify-center"
               aria-label="Appliquer les filtres de recherche"
             >
@@ -508,7 +462,7 @@ const LibraryDApp = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {[...recentBooks, ...recentBooks].map((book, index) => (
           <div key={`${book.id}-${index}`} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition duration-300 transform hover:-translate-y-1">
@@ -528,7 +482,7 @@ const LibraryDApp = () => {
                 <span className="text-xs text-gray-500">
                   IPFS: {book.ipfsHash.substring(0, 6)}...
                 </span>
-                <button 
+                <button
                   className={`text-sm px-3 py-1 rounded-md font-medium ${book.isAvailable ? 'bg-[#2A3B8C] text-white hover:bg-[#1F2D6B]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
                   disabled={!book.isAvailable}
                   onClick={() => handleBorrowBook(book.id)}
@@ -541,7 +495,7 @@ const LibraryDApp = () => {
           </div>
         ))}
       </div>
-      
+
       <div className="flex justify-center mt-8">
         <nav className="flex items-center space-x-1" aria-label="Pagination">
           <button className="px-3 py-1 rounded hover:bg-[#F8F9FA]" aria-label="Page précédente">Précédent</button>
@@ -553,11 +507,11 @@ const LibraryDApp = () => {
       </div>
     </div>
   );
-  
+
   const renderDashboard = () => (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-[#2A3B8C] mb-6">Mon Espace Personnel</h1>
-      
+
       <div className="bg-white rounded-lg shadow-md p-6 mb-8">
         <div className="flex flex-wrap justify-between items-center">
           <div className="mb-4 md:mb-0">
@@ -588,13 +542,13 @@ const LibraryDApp = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold text-gray-800">Vos Emprunts Actifs</h2>
           <span className="text-sm bg-[#2A3B8C]/10 text-[#2A3B8C] font-medium px-3 py-1 rounded-full">{userLoans.length} livre(s) emprunté(s)</span>
         </div>
-        
+
         {userLoans.length > 0 ? (
           <div className="bg-white rounded-lg shadow-md overflow-hidden">
             <table className="w-full">
@@ -612,20 +566,20 @@ const LibraryDApp = () => {
                   const dueDate = new Date(loan.dueDate);
                   const today = new Date();
                   const daysLeft = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-                  
+
                   let statusColor = "text-[#4CAF50] bg-[#4CAF50]/10";
                   let statusText = `${daysLeft} jours restants`;
-                  
+
                   if (daysLeft <= 2) {
                     statusColor = "text-[#FFD700] bg-[#FFD700]/10";
                     statusText = `${daysLeft} jour${daysLeft > 1 ? 's' : ''} - Retour imminent !`;
                   }
-                  
+
                   if (daysLeft < 0) {
                     statusColor = "text-[#E53935] bg-[#E53935]/10";
                     statusText = `En retard de ${Math.abs(daysLeft)} jour${Math.abs(daysLeft) > 1 ? 's' : ''} !`;
                   }
-                  
+
                   return (
                     <tr key={loan.id} className="hover:bg-[#F8F9FA] transition">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{loan.title}</td>
@@ -648,7 +602,7 @@ const LibraryDApp = () => {
         ) : (
           <div className="bg-white rounded-lg shadow-md p-6 text-center">
             <p className="text-gray-500">Vous n'avez pas d'emprunts actifs.</p>
-            <button 
+            <button
               className="mt-4 px-4 py-2 bg-[#2A3B8C] text-white rounded-md font-medium hover:bg-[#1F2D6B] transition"
               onClick={() => setActiveTab('catalog')}
             >
@@ -657,7 +611,7 @@ const LibraryDApp = () => {
           </div>
         )}
       </div>
-      
+
       <div>
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Historique d'Emprunts</h2>
         <div className="bg-white rounded-lg shadow-md p-6">
@@ -682,11 +636,11 @@ const LibraryDApp = () => {
       `}</style>
     </div>
   );
-  
+
   const renderAdmin = () => (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-[#6A1B9A] mb-6">Administration</h1>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
           <div className="flex justify-between items-center mb-4">
@@ -699,7 +653,7 @@ const LibraryDApp = () => {
             Ajouter un livre
           </button>
         </div>
-        
+
         <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-[#6A1B9A]">Utilisateurs</h2>
@@ -711,7 +665,7 @@ const LibraryDApp = () => {
             Gérer les utilisateurs
           </button>
         </div>
-        
+
         <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-[#6A1B9A]">Emprunts</h2>
@@ -724,12 +678,12 @@ const LibraryDApp = () => {
           </button>
         </div>
       </div>
-      
+
       <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-gray-200 bg-[#6A1B9A]/5">
           <h2 className="text-lg font-semibold text-[#6A1B9A]">Ajouter un Nouveau Livre</h2>
         </div>
-        
+
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -746,7 +700,7 @@ const LibraryDApp = () => {
                 placeholder="Titre du livre"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="author">
                 Auteur
@@ -761,12 +715,12 @@ const LibraryDApp = () => {
                 placeholder="Nom de l'auteur"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="category">
                 Catégorie
               </label>
-              <select 
+              <select
                 id="category"
                 name="category"
                 value={newBook.category}
@@ -781,7 +735,7 @@ const LibraryDApp = () => {
                 <option value="economics">Économie</option>
               </select>
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="isbn">
                 ISBN
@@ -796,7 +750,7 @@ const LibraryDApp = () => {
                 placeholder="ISBN du livre"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="pageCount">
                 Nombre de pages
@@ -811,7 +765,7 @@ const LibraryDApp = () => {
                 placeholder="Nombre de pages"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="publishedDate">
                 Date de publication
@@ -825,7 +779,7 @@ const LibraryDApp = () => {
                 className="w-full border rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-[#6A1B9A] focus:border-[#6A1B9A]"
               />
             </div>
-            
+
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="description">
                 Description
@@ -840,20 +794,20 @@ const LibraryDApp = () => {
                 placeholder="Description du livre"
               ></textarea>
             </div>
-            
+
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Image de Couverture
               </label>
-              <div 
+              <div
                 className="border-2 border-dashed border-gray-300 rounded-md p-6 flex flex-col items-center justify-center group hover:border-[#6A1B9A] transition cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {bookCoverPreview ? (
                   <div className="relative w-full max-w-xs">
-                    <img 
-                      src={bookCoverPreview} 
-                      alt="Prévisualisation de la couverture" 
+                    <img
+                      src={bookCoverPreview}
+                      alt="Prévisualisation de la couverture"
                       className="max-w-full h-auto rounded"
                     />
                     <button
@@ -884,7 +838,7 @@ const LibraryDApp = () => {
                 />
               </div>
             </div>
-            
+
             {ipfsHash && (
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="ipfsHash">
@@ -898,9 +852,9 @@ const LibraryDApp = () => {
                     value={ipfsHash}
                     readOnly
                   />
-                  <a 
-                    href={ipfsService.getIPFSGatewayURL(ipfsHash)} 
-                    target="_blank" 
+                  <a
+                    href={ipfsService.getIPFSGatewayURL(ipfsHash)}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="bg-[#F8F9FA] border border-l-0 rounded-r-md px-4 text-[#6A1B9A] hover:bg-[#6A1B9A]/5 transition flex items-center"
                   >
@@ -911,9 +865,9 @@ const LibraryDApp = () => {
               </div>
             )}
           </div>
-          
+
           <div className="mt-6 flex justify-end">
-            <button 
+            <button
               className="bg-gray-500 text-white px-4 py-2 rounded-md font-medium hover:bg-gray-600 transition mr-3"
               onClick={() => {
                 setNewBook({
@@ -933,7 +887,7 @@ const LibraryDApp = () => {
               Annuler
             </button>
             {!ipfsHash ? (
-              <button 
+              <button
                 className="bg-[#2A3B8C] text-white px-4 py-2 rounded-md font-medium hover:bg-[#1F2D6B] transition flex items-center"
                 onClick={uploadToIPFS}
                 disabled={isUploading || !bookCover}
@@ -951,7 +905,7 @@ const LibraryDApp = () => {
                 )}
               </button>
             ) : (
-              <button 
+              <button
                 className="bg-[#6A1B9A] text-white px-4 py-2 rounded-md font-medium hover:bg-[#590D88] transition"
                 onClick={handleAddBook}
                 disabled={isLoading}
@@ -974,7 +928,7 @@ const LibraryDApp = () => {
         <div className="px-6 py-4 border-b border-gray-200 bg-[#6A1B9A]/5">
           <h2 className="text-lg font-semibold text-[#6A1B9A]">Statistiques de la Bibliothèque</h2>
         </div>
-        
+
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="border rounded-lg p-4">
@@ -983,7 +937,7 @@ const LibraryDApp = () => {
                 <p className="text-gray-500 text-sm">Graphique des emprunts journaliers</p>
               </div>
             </div>
-            
+
             <div className="border rounded-lg p-4">
               <h3 className="text-md font-semibold text-gray-700 mb-3">Distribution des Réputations</h3>
               <div className="h-48 bg-[#F8F9FA] rounded-md flex items-center justify-center">
@@ -991,7 +945,7 @@ const LibraryDApp = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="flex justify-end mt-4">
             <button className="text-[#6A1B9A] hover:underline text-sm flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1004,7 +958,7 @@ const LibraryDApp = () => {
       </div>
     </div>
   );
-  
+
   const renderFooter = () => (
     <footer className="bg-[#F8F9FA] border-t mt-12">
       <div className="container mx-auto px-4 py-8">
@@ -1019,7 +973,7 @@ const LibraryDApp = () => {
               <span>Réseau: Ethereum (Sepolia)</span>
             </div>
           </div>
-          
+
           <div>
             <h3 className="text-lg font-semibold text-[#2A3B8C] mb-4">Liens Rapides</h3>
             <ul className="space-y-2">
@@ -1029,7 +983,7 @@ const LibraryDApp = () => {
               <li><button onClick={() => setActiveTab('admin')} className="text-[#2A3B8C] hover:text-[#1F2D6B] hover:underline">Administration</button></li>
             </ul>
           </div>
-          
+
           <div>
             <h3 className="text-lg font-semibold text-[#2A3B8C] mb-4">Contact & Infos</h3>
             <p className="text-gray-600 text-sm mb-4">
@@ -1059,7 +1013,7 @@ const LibraryDApp = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="border-t border-gray-200 mt-8 pt-6">
           <div className="flex flex-wrap justify-between items-center">
             <p className="text-gray-500 text-sm mb-4 md:mb-0">
@@ -1080,7 +1034,7 @@ const LibraryDApp = () => {
       </div>
     </footer>
   );
-  
+
   // Initialiser la connexion avec MetaMask
   useEffect(() => {
     const connectWallet = async () => {
@@ -1096,10 +1050,10 @@ const LibraryDApp = () => {
         setIsLoading(false);
       }
     };
-    
+
     connectWallet();
   }, []);
-  
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col text-right">
       {renderHeader()}
