@@ -11,6 +11,7 @@ import DashboardTab from './components/DashboardTab';
 import AdminTab from './components/AdminTab';
 import Notification from './components/common/Notification';
 import LoadingIndicator from './components/common/LoadingIndicator';
+import LoginTab from './components/LoginTab';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -21,6 +22,82 @@ const App = () => {
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   
+  // Vérifier la connexion initiale et configurer les écouteurs d'événements MetaMask
+  useEffect(() => {
+    const checkConnection = async () => {
+      if (window.ethereum) {
+        try {
+          // Vérifier si l'utilisateur est déjà connecté
+          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          if (accounts.length > 0) {
+            const success = await web3Service.initialize();
+            if (success) {
+              setIsConnected(true);
+              setAccount(accounts[0]);
+              
+              const registered = await web3Service.isUserRegistered();
+              setIsRegistered(registered);
+              
+              if (registered) {
+                const reputation = await web3Service.getUserReputation();
+                setUserReputation(Number(reputation));
+              }
+            }
+          }
+          
+          // Configurer les écouteurs d'événements
+          window.ethereum.on('accountsChanged', handleAccountsChanged);
+          window.ethereum.on('chainChanged', () => window.location.reload());
+          window.ethereum.on('disconnect', () => {
+            setIsConnected(false);
+            setAccount(null);
+            setIsRegistered(false);
+          });
+        } catch (error) {
+          console.error("Erreur lors de la vérification de connexion:", error);
+        }
+      } else {
+        console.log("MetaMask n'est pas installé");
+      }
+    };
+    
+    checkConnection();
+    
+    // Nettoyage
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', () => {});
+        window.ethereum.removeListener('disconnect', () => {});
+      }
+    };
+  }, []);
+  
+  // Gestionnaire de changement de compte
+  const handleAccountsChanged = async (accounts) => {
+    if (accounts.length === 0) {
+      // L'utilisateur s'est déconnecté
+      setIsConnected(false);
+      setAccount(null);
+      setIsRegistered(false);
+      showNotification("Vous avez été déconnecté de MetaMask", "info");
+    } else {
+      // L'utilisateur a changé de compte
+      setAccount(accounts[0]);
+      
+      // Vérifier si le nouveau compte est inscrit
+      const registered = await web3Service.isUserRegistered();
+      setIsRegistered(registered);
+      
+      if (registered) {
+        const reputation = await web3Service.getUserReputation();
+        setUserReputation(Number(reputation));
+      }
+      
+      showNotification("Compte MetaMask changé", "info");
+    }
+  };
+  
   // Afficher une notification
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
@@ -29,30 +106,138 @@ const App = () => {
     }, 5000);
   };
 
-  // Fonction pour se connecter à MetaMask
-  const connectToMetaMask = async () => {
+  // Fonction pour déconnecter l'utilisateur
+  const disconnectWallet = () => {
+    console.log("Déconnexion du portefeuille...");
+    
     try {
-      setIsLoading(true);
+      // Appeler la méthode de déconnexion dans Web3Service
+      web3Service.disconnect();
+      
+      // Mettre à jour l'état de l'application
+      setIsConnected(false);
+      setAccount(null);
+      setIsRegistered(false);
+      setUserReputation(0);
+      
+      // Rediriger vers la page d'accueil
+      setActiveTab('home');
+      
+      showNotification("Vous avez été déconnecté avec succès", "info");
+    } catch (error) {
+      console.error("Erreur lors de la déconnexion:", error);
+      showNotification("Erreur lors de la déconnexion", "error");
+    }
+  };
+
+  // Fonction pour rafraîchir la connexion sans recharger la page
+  const refreshConnection = async () => {
+    console.log("Rafraîchissement de la connexion...");
+    setIsLoading(true);
+    
+    try {
+      // Réinitialiser le service Web3
+      web3Service.resetState();
+      
+      // Essayer de se reconnecter
       const success = await web3Service.initialize();
+      console.log("Résultat du rafraîchissement:", success);
+      
       if (success) {
+        const account = web3Service.getAccount();
         setIsConnected(true);
-        setAccount(web3Service.getAccount());
+        setAccount(account);
+        
+        // Vérifier à nouveau l'état d'inscription
         const registered = await web3Service.isUserRegistered();
         setIsRegistered(registered);
         
         if (registered) {
           const reputation = await web3Service.getUserReputation();
           setUserReputation(Number(reputation));
+          showNotification("Connexion rafraîchie avec succès", "success");
+        } else {
+          showNotification("Connexion rétablie. Veuillez vous inscrire.", "warning");
+        }
+      } else {
+        setIsConnected(false);
+        setAccount(null);
+        setIsRegistered(false);
+        showNotification("Impossible de rafraîchir la connexion", "error");
+      }
+    } catch (error) {
+      console.error("Erreur lors du rafraîchissement:", error);
+      setIsConnected(false);
+      setAccount(null);
+      setIsRegistered(false);
+      showNotification("Erreur lors du rafraîchissement: " + (error.message || "Erreur inconnue"), "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fonction pour se connecter à MetaMask
+  const connectToMetaMask = async () => {
+    try {
+      console.log("Tentative de connexion à MetaMask...");
+      
+      // Vérification de la présence de MetaMask
+      if (!window.ethereum && !window.web3) {
+        console.error("Aucun provider Ethereum détecté");
+        showNotification("MetaMask n'est pas installé. Veuillez l'installer pour continuer.", "error");
+        return;
+      }
+      
+      setIsLoading(true);
+      console.log("Appel à web3Service.initialize()");
+      
+      const success = await web3Service.initialize();
+      console.log("Résultat de l'initialisation:", success);
+      
+      if (success) {
+        const account = web3Service.getAccount();
+        console.log("Compte connecté:", account);
+        
+        setIsConnected(true);
+        setAccount(account);
+        
+        // Vérifier si l'utilisateur est inscrit
+        console.log("Vérification de l'inscription...");
+        const registered = await web3Service.isUserRegistered();
+        console.log("Utilisateur inscrit:", registered);
+        setIsRegistered(registered);
+        
+        if (registered) {
+          // Charger la réputation
+          console.log("Récupération de la réputation...");
+          const reputation = await web3Service.getUserReputation();
+          console.log("Réputation utilisateur:", reputation);
+          setUserReputation(Number(reputation));
           showNotification("Connexion réussie à votre portefeuille", "success");
         } else {
           showNotification("Veuillez vous inscrire pour utiliser toutes les fonctionnalités", "warning");
+          // Rediriger automatiquement vers la page d'inscription
+          setActiveTab('login');
         }
       } else {
-        showNotification("Connexion au portefeuille échouée. Veuillez installer MetaMask.", "error");
+        // Vérifier si l'adresse du contrat est un placeholder
+        if (web3Service.contractAddress.includes('...')) {
+          showNotification("L'adresse du contrat n'est pas configurée correctement. Contactez l'administrateur.", "error");
+        } else {
+          showNotification("Connexion au portefeuille échouée. Vérifiez que MetaMask est déverrouillé et rechargez la page.", "error");
+        }
       }
     } catch (error) {
       console.error("Erreur lors de la connexion à MetaMask:", error);
-      showNotification("Erreur lors de la connexion: " + error.message, "error");
+      
+      // Messages d'erreur plus spécifiques
+      if (error.code === 4001) {
+        showNotification("Vous avez refusé la connexion à MetaMask", "warning");
+      } else if (error.message && error.message.includes("contract")) {
+        showNotification("Problème avec le contrat intelligent: " + error.message, "error");
+      } else {
+        showNotification("Erreur lors de la connexion: " + (error.message || "Erreur inconnue"), "error");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -111,14 +296,31 @@ const App = () => {
         setActiveTab={setActiveTab}
         account={account}
         isConnected={isConnected}
+        isRegistered={isRegistered}
         connectToMetaMask={connectToMetaMask}
+        refreshConnection={refreshConnection}
+        disconnectWallet={disconnectWallet}
       />
       
       <main className="flex-grow">
-        {activeTab === 'home' && <HomeTab setActiveTab={setActiveTab} handleBorrowBook={handleBorrowBook} />}
-        {activeTab === 'catalog' && <CatalogTab handleBorrowBook={handleBorrowBook} />}
-        {activeTab === 'dashboard' && <DashboardTab setActiveTab={setActiveTab} handleReturnBook={handleReturnBook} userReputation={userReputation} />}
+        {activeTab === 'home' && <HomeTab 
+          setActiveTab={setActiveTab} 
+          handleBorrowBook={handleBorrowBook} 
+          isConnected={isConnected}
+          account={account}
+          connectToMetaMask={connectToMetaMask}
+          disconnectWallet={disconnectWallet}
+        />}
+        {activeTab === 'catalog' && <CatalogTab 
+          handleBorrowBook={handleBorrowBook} 
+        />}
+        {activeTab === 'dashboard' && <DashboardTab 
+          setActiveTab={setActiveTab} 
+          handleReturnBook={handleReturnBook} 
+          userReputation={userReputation}
+        />}
         {activeTab === 'admin' && <AdminTab setNotification={setNotification} setIsLoading={setIsLoading} />}
+        {activeTab === 'login' && <LoginTab setActiveTab={setActiveTab} showNotification={showNotification} setIsLoading={setIsLoading} />}
       </main>
       
       <Footer setActiveTab={setActiveTab} />

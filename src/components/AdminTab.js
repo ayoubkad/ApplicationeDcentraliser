@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Plus, User, CheckCircle, Upload, X } from 'lucide-react';
 import ipfsService from '../IPFSService';
-import web3Service from '../Web3Service';
+import web3Service from '../services/Web3Service';
 
 const AdminTab = ({ setNotification, setIsLoading }) => {
   const [newBook, setNewBook] = useState({
@@ -60,7 +60,7 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
 
   const handleAddBook = async () => {
     if (!newBook.title || !newBook.author) {
-      showNotification('Le titre et l’auteur sont obligatoires', 'warning');
+      showNotification("Le titre et l'auteur sont obligatoires", "warning");
       return;
     }
     setIsLoading(true);
@@ -75,7 +75,7 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
         setIpfsHash('');
       }
     } catch (error) {
-      showNotification('Erreur lors de l’ajout du livre: ' + error.message, 'error');
+      showNotification("Erreur lors de l'ajout du livre: " + error.message, "error");
     } finally {
       setIsLoading(false);
     }

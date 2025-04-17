@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Book, CheckCircle } from 'lucide-react';
+import { User, Book, CheckCircle, LogOut } from 'lucide-react';
 import BookCard from './common/BookCard';
 
 const recentBooks = [
@@ -9,7 +9,7 @@ const recentBooks = [
   { id: 4, title: "Histoire de l'Art", author: "Ernst Gombrich", isAvailable: true, ipfsHash: "QmA...", category: "Art", pageCount: 412, publishedDate: "2020-01-30", isbn: "978-2-0814-1212-2" }
 ];
 
-const HomeTab = ({ setActiveTab, handleBorrowBook }) => {
+const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, account, connectToMetaMask, disconnectWallet }) => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="bg-[#2A3B8C] text-[#F8F9FA] rounded-lg shadow-md overflow-hidden mb-8">
@@ -17,13 +17,31 @@ const HomeTab = ({ setActiveTab, handleBorrowBook }) => {
           <div className="p-8 md:w-1/2">
             <h1 className="text-3xl font-bold mb-4">Bibliothèque Universitaire Décentralisée</h1>
             <p className="mb-6">Une solution moderne pour emprunter et gérer des livres universitaires avec transparence et sécurité grâce à la blockchain.</p>
-            <button
-              className="bg-[#FFD700] text-[#2A3B8C] px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-yellow-400 transition"
-              onClick={() => setActiveTab('catalog')}
-              aria-label="Explorer le catalogue de livres"
-            >
-              Explorer le catalogue
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                className="bg-[#FFD700] text-[#2A3B8C] px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-yellow-400 transition"
+                onClick={() => setActiveTab('catalog')}
+                aria-label="Explorer le catalogue de livres"
+              >
+                Explorer le catalogue
+              </button>
+              
+              {isConnected && (
+                <button
+                  className="bg-red-500 text-white px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-red-600 transition flex items-center"
+                  onClick={disconnectWallet}
+                >
+                  <LogOut size={18} className="mr-2" />
+                  Déconnecter
+                </button>
+              )}
+            </div>
+            
+            {isConnected && account && (
+              <div className="mt-4 text-sm bg-white/20 rounded-md px-3 py-2 inline-block">
+                Connecté: {`${account.substring(0, 6)}...${account.substring(account.length - 4)}`}
+              </div>
+            )}
           </div>
           <div className="md:w-1/2 h-64 bg-[#1F2D6B] flex items-center justify-center">
             <img src="/api/placeholder/600/400" alt="Bibliothèque universitaire" className="h-full w-full object-cover" />
