@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import web3Service from './services/Web3Service';
 import ipfsService from './services/IPFSService';
+import LibraryDAppABI from './LibraryDAppABI.json';
 
 // Composants existants
 import Header from './components/Header';
@@ -21,47 +22,121 @@ const App = () => {
   const [isRegistered, setIsRegistered] = useState(false);
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [contractInfo, setContractInfo] = useState({
+    address: null,
+    abi: LibraryDAppABI,
+    hasValidConnection: false
+  });
+ 
   // Vérifier la connexion initiale et configurer les écouteurs d'événements MetaMask
   useEffect(() => {
     const checkConnection = async () => {
-      if (window.ethereum) {
-        try {
+      setIsLoading(true);
+      
+      try {
+        if (window.ethereum) {
           // Vérifier si l'utilisateur est déjà connecté
           const accounts = await window.ethereum.request({ method: 'eth_accounts' });
           if (accounts.length > 0) {
+            console.log("Compte déjà connecté:", accounts[0]);
             const success = await web3Service.initialize();
             if (success) {
               setIsConnected(true);
               setAccount(accounts[0]);
               
+              // Mettre à jour les informations du contrat
+              setContractInfo({
+                address: web3Service.contractAddress,
+                abi: LibraryDAppABI,
+                hasValidConnection: success,
+                networkId: web3Service.networkId,
+                networkName: web3Service.getNetworkName(web3Service.networkId)
+              });
+              
               const registered = await web3Service.isUserRegistered();
               setIsRegistered(registered);
+              console.log("Utilisateur inscrit:", registered);
               
               if (registered) {
                 const reputation = await web3Service.getUserReputation();
                 setUserReputation(Number(reputation));
+                console.log("Réputation utilisateur:", reputation);
               }
             }
+          } else {
+            console.log("Aucun compte connecté au démarrage");
           }
           
           // Configurer les écouteurs d'événements
           window.ethereum.on('accountsChanged', handleAccountsChanged);
-          window.ethereum.on('chainChanged', () => window.location.reload());
+          window.ethereum.on('chainChanged', () => {
+            // Mise à jour du contrat lors du changement de réseau
+            setTimeout(async () => {
+              const success = await web3Service.initialize();
+              if (success) {
+                setContractInfo({
+                  address: web3Service.contractAddress,
+                  abi: LibraryDAppABI,
+                  hasValidConnection: success,
+                  networkId: web3Service.networkId,
+                  networkName: web3Service.getNetworkName(web3Service.networkId)
+                });
+                showNotification(`Réseau changé: ${web3Service.getNetworkName(web3Service.networkId)}`, "info");
+              }
+            }, 1000);
+          });
           window.ethereum.on('disconnect', () => {
             setIsConnected(false);
             setAccount(null);
             setIsRegistered(false);
+            setContractInfo(prev => ({ ...prev, hasValidConnection: false }));
           });
-        } catch (error) {
-          console.error("Erreur lors de la vérification de connexion:", error);
+        } else {
+          console.log("MetaMask n'est pas installé");
+          showNotification("MetaMask n'est pas installé. Veuillez l'installer pour utiliser toutes les fonctionnalités.", "warning");
         }
-      } else {
-        console.log("MetaMask n'est pas installé");
+      } catch (error) {
+        console.error("Erreur lors de la vérification de connexion:", error);
+        showNotification("Erreur de connexion au démarrage", "error");
+      } finally {
+        setIsLoading(false);
       }
     };
     
     checkConnection();
+    
+    // Ajouter un écouteur pour l'événement personnalisé d'ouverture de l'onglet d'inscription
+    const openLoginTabHandler = () => {
+      console.log("Ouverture de l'onglet d'inscription depuis une carte de livre");
+      setActiveTab('login');
+    };
+    
+    // Ajouter un écouteur pour l'événement personnalisé d'inscription réussie
+    const userRegisteredHandler = (event) => {
+      console.log("Inscription réussie détectée:", event.detail);
+      
+      // Mettre à jour l'état de l'application
+      setIsRegistered(true);
+      
+      // Charger la réputation initiale (généralement 0 pour un nouvel utilisateur)
+      const loadInitialReputation = async () => {
+        try {
+          const reputation = await web3Service.getUserReputation();
+          setUserReputation(Number(reputation));
+          console.log("Réputation initiale chargée:", reputation);
+        } catch (error) {
+          console.error("Erreur lors du chargement de la réputation initiale:", error);
+        }
+      };
+      
+      loadInitialReputation();
+      
+      // Afficher une notification de confirmation
+      showNotification("Votre compte a été enregistré avec succès!", "success");
+    };
+    
+    window.addEventListener('openLoginTab', openLoginTabHandler);
+    window.addEventListener('userRegistered', userRegisteredHandler);
     
     // Nettoyage
     return () => {
@@ -70,10 +145,67 @@ const App = () => {
         window.ethereum.removeListener('chainChanged', () => {});
         window.ethereum.removeListener('disconnect', () => {});
       }
+      window.removeEventListener('openLoginTab', openLoginTabHandler);
+      window.removeEventListener('userRegistered', userRegisteredHandler);
     };
   }, []);
   
-  // Gestionnaire de changement de compte
+  // Écouteur pour les événements de mise à jour de réputation
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const isConnected = await web3Service.isMetaMaskInstalled();
+        setIsConnected(isConnected);
+        
+        if (isConnected) {
+          // Vérification de la connexion à MetaMask et initialisation
+          await web3Service.initialize();
+          
+          // Récupérer l'adresse du compte
+          const account = web3Service.getAccount();
+          setAccount(account);
+          
+          // Vérifier si l'utilisateur est inscrit
+          const registered = await web3Service.isUserRegistered();
+          setIsRegistered(registered);
+          
+          // Récupérer la réputation de l'utilisateur s'il est inscrit
+          if (registered) {
+            const reputation = await web3Service.getUserReputation();
+            setUserReputation(Number(reputation));
+            console.log("Réputation de l'utilisateur chargée:", reputation);
+          }
+        }
+      } catch (error) {
+        console.error("Erreur lors de la vérification de la connexion:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    checkConnection();
+    
+    // Ajouter un écouteur pour les mises à jour de réputation
+    const reputationUpdatedHandler = (event) => {
+      if (event.detail && event.detail.reputation) {
+        console.log("Mise à jour de la réputation détectée:", event.detail.reputation);
+        setUserReputation(Number(event.detail.reputation));
+        
+        // Afficher une notification
+        showNotification(`Votre score de réputation a été mis à jour: ${event.detail.reputation}`, "success");
+      }
+    };
+    
+    // Écouter l'événement personnalisé de mise à jour de réputation
+    window.addEventListener('reputationUpdated', reputationUpdatedHandler);
+    
+    // Nettoyage
+    return () => {
+      window.removeEventListener('reputationUpdated', reputationUpdatedHandler);
+    };
+  }, []);
+
+  // Fonction pour gérer les changements de compte
   const handleAccountsChanged = async (accounts) => {
     if (accounts.length === 0) {
       // L'utilisateur s'est déconnecté
@@ -84,17 +216,29 @@ const App = () => {
     } else {
       // L'utilisateur a changé de compte
       setAccount(accounts[0]);
+      setIsConnected(true);
       
       // Vérifier si le nouveau compte est inscrit
-      const registered = await web3Service.isUserRegistered();
-      setIsRegistered(registered);
-      
-      if (registered) {
-        const reputation = await web3Service.getUserReputation();
-        setUserReputation(Number(reputation));
+      console.log("Vérification de l'inscription du nouveau compte:", accounts[0]);
+      try {
+        const registered = await web3Service.isUserRegistered();
+        console.log("Résultat de la vérification d'inscription:", registered);
+        setIsRegistered(registered);
+        
+        if (registered) {
+          const reputation = await web3Service.getUserReputation();
+          setUserReputation(Number(reputation));
+          showNotification("Compte inscrit trouvé. Réputation: " + reputation, "success");
+        } else {
+          showNotification("Ce compte n'est pas encore inscrit. Veuillez vous inscrire.", "warning");
+          // Rediriger vers la page d'inscription
+          setActiveTab('login');
+        }
+      } catch (error) {
+        console.error("Erreur lors de la vérification d'inscription:", error);
+        setIsRegistered(false);
+        showNotification("Impossible de vérifier votre inscription", "error");
       }
-      
-      showNotification("Compte MetaMask changé", "info");
     }
   };
   
@@ -158,6 +302,8 @@ const App = () => {
           showNotification("Connexion rafraîchie avec succès", "success");
         } else {
           showNotification("Connexion rétablie. Veuillez vous inscrire.", "warning");
+          // Rediriger automatiquement vers l'inscription si non inscrit
+          setActiveTab('login');
         }
       } else {
         setIsConnected(false);
@@ -218,6 +364,7 @@ const App = () => {
           showNotification("Veuillez vous inscrire pour utiliser toutes les fonctionnalités", "warning");
           // Rediriger automatiquement vers la page d'inscription
           setActiveTab('login');
+          console.log("Redirection vers l'écran d'inscription...");
         }
       } else {
         // Vérifier si l'adresse du contrat est un placeholder
@@ -243,11 +390,43 @@ const App = () => {
     }
   };
 
+  // Fonction pour se connecter au réseau Ganache local
+  const connectToGanacheNetwork = async () => {
+    setIsLoading(true);
+    try {
+      const success = await web3Service.addGanacheNetwork();
+      if (success) {
+        showNotification("Réseau Ganache configuré. Veuillez le sélectionner dans MetaMask.", "success");
+      } else {
+        showNotification("Impossible d'ajouter automatiquement le réseau Ganache. Vous pouvez le configurer manuellement dans MetaMask.", "warning");
+      }
+    } catch (error) {
+      console.error("Erreur lors de la connexion au réseau Ganache:", error);
+      showNotification("Erreur lors de la connexion au réseau Ganache: " + error.message, "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Emprunter un livre
   const handleBorrowBook = async (bookId) => {
     if (!isConnected) {
       showNotification("Veuillez vous connecter avec MetaMask", "warning");
-      return;
+      return false;
+    }
+    
+    if (!isRegistered) {
+      // Mettre à jour l'URL pour indiquer que l'utilisateur vient d'une tentative d'emprunt
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('source', 'borrow');
+      window.history.pushState({}, '', currentUrl);
+      
+      // Déclencher l'événement personnalisé pour indiquer la redirection depuis emprunt
+      window.dispatchEvent(new CustomEvent('borrowRedirect'));
+      
+      showNotification("Vous devez être inscrit pour emprunter des livres", "warning");
+      setActiveTab('login'); // Redirection automatique vers la page d'inscription
+      return false;
     }
 
     try {
@@ -255,12 +434,15 @@ const App = () => {
       const success = await web3Service.borrowBook(bookId);
       if (success) {
         showNotification("Livre emprunté avec succès!", "success");
+        return true;
       } else {
         showNotification("Échec de l'emprunt du livre", "error");
+        return false;
       }
     } catch (error) {
       console.error("Erreur lors de l'emprunt du livre:", error);
       showNotification("Erreur lors de l'emprunt: " + error.message, "error");
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -270,7 +452,13 @@ const App = () => {
   const handleReturnBook = async (bookId) => {
     if (!isConnected) {
       showNotification("Veuillez vous connecter avec MetaMask", "warning");
-      return;
+      return false;
+    }
+    
+    if (!isRegistered) {
+      showNotification("Veuillez vous inscrire avant de retourner un livre", "warning");
+      setActiveTab('login');
+      return false;
     }
 
     try {
@@ -278,55 +466,117 @@ const App = () => {
       const success = await web3Service.returnBook(bookId);
       if (success) {
         showNotification("Livre retourné avec succès!", "success");
+        return true;
       } else {
         showNotification("Échec du retour du livre", "error");
+        return false;
       }
     } catch (error) {
       console.error("Erreur lors du retour du livre:", error);
       showNotification("Erreur lors du retour: " + error.message, "error");
+      return false;
     } finally {
       setIsLoading(false);
     }
   };
+  
+  // Déterminer si un onglet doit être désactivé
+  const isTabDisabled = (tab) => {
+    if (!isConnected && tab === 'dashboard') {
+      return true;
+    }
+    if (!isRegistered && (tab === 'dashboard')) {
+      return true;
+    }
+    return false;
+  };
+
+  // Changer d'onglet avec vérification des conditions
+  const handleTabChange = (tab) => {
+    if (isTabDisabled(tab)) {
+      if (!isConnected) {
+        if (tab === 'admin') {
+          // Ne pas afficher de message pour l'admin
+          return;
+        } else if (tab === 'dashboard') {
+          // Utiliser une notification bleue pour Mon espace
+          showNotification("Veuillez vous connecter pour accéder à Mon espace", "info");
+        } else {
+          showNotification("Veuillez vous connecter pour accéder à cette fonctionnalité", "warning");
+        }
+      } else if (!isRegistered) {
+        showNotification("Veuillez vous inscrire pour accéder à cette fonctionnalité", "warning");
+        setActiveTab('login');
+        return;
+      }
+      return;
+    }
+    setActiveTab(tab);
+  };
+
+  // Fonction pour afficher les informations du contrat (pour le débogage ou pour les utilisateurs avancés)
+  const displayContractInfo = () => {
+    console.log("Informations du contrat:", contractInfo);
+    showNotification(`Contrat connecté sur ${contractInfo.networkName || 'réseau inconnu'}`, "info");
+  };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-gray-50">
       <Header 
         activeTab={activeTab} 
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         account={account}
         isConnected={isConnected}
         isRegistered={isRegistered}
         connectToMetaMask={connectToMetaMask}
         refreshConnection={refreshConnection}
         disconnectWallet={disconnectWallet}
+        showNotification={showNotification}
+        contractInfo={contractInfo}
       />
       
-      <main className="flex-grow">
+      <main className="flex-grow container mx-auto px-4 py-6">
         {activeTab === 'home' && <HomeTab 
-          setActiveTab={setActiveTab} 
+          setActiveTab={handleTabChange} 
           handleBorrowBook={handleBorrowBook} 
           isConnected={isConnected}
+          isRegistered={isRegistered}
           account={account}
           connectToMetaMask={connectToMetaMask}
           disconnectWallet={disconnectWallet}
         />}
         {activeTab === 'catalog' && <CatalogTab 
           handleBorrowBook={handleBorrowBook} 
+          isConnected={isConnected}
+          isRegistered={isRegistered}
         />}
         {activeTab === 'dashboard' && <DashboardTab 
-          setActiveTab={setActiveTab} 
+          setActiveTab={handleTabChange} 
           handleReturnBook={handleReturnBook} 
           userReputation={userReputation}
+          isConnected={isConnected}
+          isRegistered={isRegistered}
         />}
-        {activeTab === 'admin' && <AdminTab setNotification={setNotification} setIsLoading={setIsLoading} />}
-        {activeTab === 'login' && <LoginTab setActiveTab={setActiveTab} showNotification={showNotification} setIsLoading={setIsLoading} />}
+        {activeTab === 'admin' && <AdminTab 
+          setNotification={showNotification} 
+          setIsLoading={setIsLoading} 
+          isConnected={isConnected}
+          isRegistered={isRegistered}
+        />}
+        {activeTab === 'login' && <LoginTab 
+          setActiveTab={handleTabChange} 
+          showNotification={showNotification} 
+          setIsLoading={setIsLoading} 
+          isConnected={isConnected}
+          account={account}
+          connectToMetaMask={connectToMetaMask}
+        />}
       </main>
       
-      <Footer setActiveTab={setActiveTab} />
+      <Footer setActiveTab={handleTabChange} />
       
       {notification && <Notification notification={notification} setNotification={setNotification} />}
-      {isLoading && <LoadingIndicator isLoading={isLoading} />}
+      {isLoading && <LoadingIndicator />}
     </div>
   );
 };

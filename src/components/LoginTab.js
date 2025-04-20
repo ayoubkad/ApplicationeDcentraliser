@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, BookOpen, Shield, AlertTriangle, CheckCircle, WifiOff } from 'lucide-react';
+import { User, BookOpen, Shield, AlertTriangle, CheckCircle, WifiOff, UserPlus, AlertCircle } from 'lucide-react';
 import web3Service from '../services/Web3Service';
 
-const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
+// Renommer la prop pour éviter le conflit avec la fonction locale
+const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, account, connectToMetaMask: externalConnectToMetaMask }) => {
   const [userName, setUserName] = useState('');
   const [userRole, setUserRole] = useState('0'); // 0 = étudiant, 1 = professeur
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -11,56 +12,117 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
   const [currentStep, setCurrentStep] = useState('form'); // 'form', 'connecting', 'registering', 'success'
   const [ethereumAddress, setEthereumAddress] = useState('');
   const [networkInfo, setNetworkInfo] = useState(null);
+  const [redirectSource, setRedirectSource] = useState('');
   
-  // Vérifier si MetaMask est disponible et configurer les écouteurs d'événements
   useEffect(() => {
+    // Vérifier si on est redirigé depuis une tentative d'emprunt
+    const checkRedirectReason = () => {
+      const params = new URLSearchParams(window.location.search);
+      const source = params.get('source');
+      if (source === 'borrow') {
+        setRedirectSource('borrow');
+      }
+    };
+    
+    checkRedirectReason();
+    
     // Vérifier si MetaMask est installé
-    const isMetaMaskInstalled = web3Service.isMetaMaskInstalled();
-    setMetamaskAvailable(isMetaMaskInstalled);
-    
-    if (!isMetaMaskInstalled) {
-      showNotification("MetaMask n'est pas installé. Veuillez l'installer pour vous inscrire.", "warning");
-      return;
-    }
-    
-    // Vérifier si l'utilisateur est déjà connecté à MetaMask
-    const checkConnection = async () => {
-      const isConnected = await web3Service.checkIfConnected();
-      if (isConnected) {
-        setEthereumAddress(web3Service.getAccount());
-        const network = web3Service.getNetworkDetails();
-        setNetworkInfo(network);
+    const checkMetaMask = async () => {
+      const detected = typeof window.ethereum !== 'undefined';
+      setMetamaskAvailable(detected);
+      
+      if (detected && isConnected && account) {
+        // Déjà connecté, récupérer les informations du compte
+        setEthereumAddress(account);
         
-        if (!network.supported) {
-          showNotification(`Réseau non supporté: ${network.name}. Veuillez changer de réseau.`, "warning");
+        // Récupérer les informations du réseau
+        try {
+          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+          const chainIdNumber = parseInt(chainId, 16);
+          
+          let name = 'Réseau inconnu';
+          let supported = false;
+          
+          // Définir les réseaux supportés
+          switch (chainIdNumber) {
+            case 1:
+              name = 'Ethereum Mainnet';
+              supported = true;
+              break;
+            case 11155111:
+              name = 'Sepolia Testnet';
+              supported = true;
+              break;
+            case 80001:
+              name = 'Mumbai Testnet';
+              supported = true;
+              break;
+            case 137:
+              name = 'Polygon Mainnet';
+              supported = true;
+              break;
+            case 1337:
+              name = 'Ganache Local';
+              supported = true;
+              break;
+            default:
+              name = `Réseau ${chainIdNumber}`;
+              supported = true; // Tous les réseaux sont maintenant supportés
+          }
+          
+          setNetworkInfo({ chainId: chainIdNumber, name, supported });
+        } catch (error) {
+          console.error("Erreur lors de la récupération du réseau:", error);
+          setNetworkInfo({ chainId: 0, name: 'Inconnu', supported: true });
         }
       }
     };
     
-    checkConnection();
+    checkMetaMask();
     
-    // Configurer les écouteurs d'événements personnalisés
-    const handleAccountChanged = (e) => {
-      setEthereumAddress(e.detail.account);
-      showNotification("Compte MetaMask changé", "info");
-      
-      if (currentStep !== 'form') {
-        setCurrentStep('form');
+    // Définir des écouteurs d'événements personnalisés pour la communication
+    const handleAccountChanged = (accounts) => {
+      if (accounts && accounts.length > 0) {
+        setEthereumAddress(accounts[0]);
+      } else {
+        setEthereumAddress('');
       }
     };
     
-    const handleNetworkChanged = (e) => {
-      setNetworkInfo({
-        id: e.detail.networkId,
-        name: e.detail.networkName,
-        supported: web3Service.isNetworkSupported()
-      });
+    const handleNetworkChanged = (chainId) => {
+      const chainIdNumber = parseInt(chainId, 16);
       
-      if (!web3Service.isNetworkSupported()) {
-        showNotification(`Réseau non supporté: ${e.detail.networkName}. Veuillez changer de réseau.`, "warning");
-      } else {
-        showNotification(`Réseau changé: ${e.detail.networkName}`, "info");
+      let name = 'Réseau inconnu';
+      let supported = false;
+      
+      // Définir les réseaux supportés
+      switch (chainIdNumber) {
+        case 1:
+          name = 'Ethereum Mainnet';
+          supported = true;
+          break;
+        case 11155111:
+          name = 'Sepolia Testnet';
+          supported = true;
+          break;
+        case 80001:
+          name = 'Mumbai Testnet';
+          supported = true;
+          break;
+        case 137:
+          name = 'Polygon Mainnet';
+          supported = true;
+          break;
+        case 1337:
+          name = 'Ganache Local';
+          supported = true;
+          break;
+        default:
+          name = `Réseau ${chainIdNumber}`;
+          supported = true; // Tous les réseaux sont maintenant supportés
       }
+      
+      setNetworkInfo({ chainId: chainIdNumber, name, supported });
     };
     
     const handleDisconnect = () => {
@@ -70,44 +132,75 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
       showNotification("Déconnecté de MetaMask", "info");
     };
     
+    // Écouter l'événement de nettoyage des données
+    const handleUserDataCleared = () => {
+      setEthereumAddress('');
+      setNetworkInfo(null);
+      setCurrentStep('form');
+      setErrors({});
+      showNotification("Les données utilisateur ont été nettoyées avec succès", "success");
+    };
+    
     // Ajouter les écouteurs
     window.addEventListener('metamaskAccountChanged', handleAccountChanged);
     window.addEventListener('metamaskNetworkChanged', handleNetworkChanged);
     window.addEventListener('metamaskDisconnected', handleDisconnect);
+    window.addEventListener('userDataCleared', handleUserDataCleared);
+    
+    // Vérifier si on est redirigé depuis une tentative d'emprunt (via événement personnalisé)
+    const checkBorrowRedirect = (event) => {
+      setRedirectSource('borrow');
+    };
+    window.addEventListener('borrowRedirect', checkBorrowRedirect);
     
     // Nettoyer les écouteurs lors du démontage
     return () => {
       window.removeEventListener('metamaskAccountChanged', handleAccountChanged);
       window.removeEventListener('metamaskNetworkChanged', handleNetworkChanged);
       window.removeEventListener('metamaskDisconnected', handleDisconnect);
+      window.removeEventListener('borrowRedirect', checkBorrowRedirect);
+      window.removeEventListener('userDataCleared', handleUserDataCleared);
     };
-  }, [showNotification, currentStep]);
+  }, [showNotification, currentStep, isConnected, account]);
   
   // Validation du formulaire - Étape 1: Vérification des champs obligatoires
   const validateForm = () => {
+    console.log("Validation du formulaire avec nom:", userName, "rôle:", userRole);
     const newErrors = {};
     
+    // Vérification de la présence de MetaMask
     if (!metamaskAvailable) {
+      console.error("MetaMask n'est pas installé");
       newErrors.metamask = "MetaMask est requis pour s'inscrire";
     }
     
-    if (!userName.trim()) {
+    // Vérification du nom d'utilisateur
+    if (!userName || !userName.trim()) {
+      console.error("Le nom est vide");
       newErrors.userName = "Le nom est obligatoire";
     } else if (userName.trim().length < 3) {
+      console.error("Le nom est trop court:", userName.trim().length);
       newErrors.userName = "Le nom doit comporter au moins 3 caractères";
+    } else if (userName.trim().length > 50) {
+      console.error("Le nom est trop long:", userName.trim().length);
+      newErrors.userName = "Le nom ne doit pas dépasser 50 caractères";
     }
     
-    // Vérifier si le réseau est supporté
-    if (networkInfo && !networkInfo.supported) {
-      newErrors.network = `Réseau non supporté: ${networkInfo.name}`;
+    // Vérification du rôle
+    if (userRole !== '0' && userRole !== '1') {
+      console.error("Rôle invalide:", userRole);
+      newErrors.role = "Veuillez sélectionner un rôle valide";
     }
     
+    // Mettre à jour les erreurs et retourner le résultat de validation
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const isValid = Object.keys(newErrors).length === 0;
+    console.log("Résultat de validation:", isValid, newErrors);
+    return isValid;
   };
   
   // Étape 2: Demande de connexion et signature à MetaMask
-  const connectToMetaMask = async () => {
+  const connectToMetaMaskLocal = async () => {
     if (!validateForm()) {
       return false;
     }
@@ -127,16 +220,11 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
       
       setEthereumAddress(account);
       
-      // Vérifier le réseau mais ne pas bloquer si non supporté
+      // Vérifier le réseau
       const network = web3Service.getNetworkDetails();
       setNetworkInfo(network);
       
-      if (!network.supported) {
-        showNotification(`Réseau ${network.name} détecté. Certaines fonctionnalités pourraient être limitées.`, "warning");
-        // On continue quand même, sans bloquer
-      } else {
-        showNotification("Adresse Ethereum authentifiée: " + web3Service.shortenAddress(account), "success");
-      }
+      showNotification("Adresse Ethereum authentifiée: " + web3Service.shortenAddress(account), "success");
       
       return true;
     } catch (error) {
@@ -152,13 +240,28 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
   const registerUser = async (e) => {
     e.preventDefault();
     
+    // Valider le formulaire avant de continuer
+    if (!validateForm()) {
+      return;
+    }
+    
     try {
       setIsSubmitting(true);
       setIsLoading(true);
       
-      // Étape 2: Connexion à MetaMask
-      const connected = await connectToMetaMask();
-      if (!connected) {
+      // Étape 2: Connexion à MetaMask si pas déjà connecté
+      if (!isConnected) {
+        const connected = await connectToMetaMaskLocal();
+        if (!connected) {
+          setIsSubmitting(false);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // Vérifier que l'adresse Ethereum est disponible
+      if (!account && !ethereumAddress) {
+        showNotification("Aucune adresse Ethereum détectée. Veuillez vous connecter à MetaMask.", "error");
         setIsSubmitting(false);
         setIsLoading(false);
         return;
@@ -168,14 +271,33 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
       setCurrentStep('registering');
       showNotification("Vérification et enregistrement sur la blockchain...", "info");
       
+      // Utiliser l'adresse du compte connecté
+      const currentAccount = account || ethereumAddress;
+      console.log("Compte utilisé pour l'inscription:", currentAccount);
+      
       const result = await web3Service.registerUser(userName, parseInt(userRole));
       
       // Étape 4: Traitement du résultat
       setCurrentStep('success');
       showNotification(`Inscription réussie en tant que ${userRole === '0' ? 'étudiant' : 'professeur'}!`, "success");
       
-      // Rediriger vers la page d'accueil après inscription
-      setTimeout(() => setActiveTab('home'), 2000);
+      // Déclencher un événement personnalisé pour informer l'application de la nouvelle inscription
+      window.dispatchEvent(new CustomEvent('userRegistered', { 
+        detail: { 
+          account: currentAccount,
+          userName: userName,
+          userRole: parseInt(userRole)
+        } 
+      }));
+      
+      // Rediriger vers la page appropriée après inscription
+      setTimeout(() => {
+        if (redirectSource === 'borrow') {
+          setActiveTab('catalog');
+        } else {
+          setActiveTab('home');
+        }
+      }, 2000);
       
     } catch (error) {
       console.error("Erreur lors de l'inscription:", error);
@@ -188,7 +310,7 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
       } else if (error.code === 4001) {
         showNotification("Transaction refusée. Veuillez réessayer et confirmer dans MetaMask.", "warning");
       } else if (error.code === 'UNSUPPORTED_NETWORK') {
-        showNotification(`Réseau non supporté: ${error.networkName || 'Inconnu'}. Veuillez changer de réseau.`, "warning");
+        showNotification(`Erreur réseau: ${error.networkName || 'Inconnu'}. Veuillez réessayer.`, "warning");
       } else {
         showNotification("Erreur lors de l'inscription: " + error.message, "error");
       }
@@ -242,25 +364,56 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
       );
     }
     
-    // Afficher un avertissement pour réseau non supporté, mais ne pas bloquer
-    if (networkInfo && !networkInfo.supported && currentStep === 'form') {
-      return (
-        <div className="bg-yellow-50 p-4 rounded-md my-4 flex items-start">
-          <div className="flex-shrink-0">
-            <WifiOff className="h-5 w-5 text-yellow-500" />
-          </div>
-          <div className="ml-3">
-            <h3 className="text-sm font-medium text-yellow-800">Réseau non reconnu</h3>
-            <p className="mt-1 text-sm text-yellow-700">
-              Vous êtes connecté au réseau <strong>{networkInfo.name}</strong> qui n'est pas officiellement supporté.
-              L'inscription pourrait quand même fonctionner, mais certaines fonctionnalités pourraient être limitées.
-            </p>
-          </div>
-        </div>
-      );
+    return null;
+  };
+  
+  // Fonction pour connecter à MetaMask via la prop passée 
+  const handleConnectButtonClick = async () => {
+    if (!metamaskAvailable) {
+      showNotification("Veuillez installer MetaMask pour continuer", "warning");
+      return;
     }
     
-    return null;
+    setIsLoading(true);
+    try {
+      await externalConnectToMetaMask(); // Utiliser la fonction reçue des props
+    } catch (error) {
+      console.error("Erreur lors de la connexion à MetaMask:", error);
+      showNotification("Impossible de se connecter à MetaMask", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Ajouter une nouvelle fonction pour nettoyer les données utilisateur
+  const handleClearUserData = () => {
+    try {
+      const cleared = web3Service.clearAllUserData();
+      if (cleared) {
+        showNotification("Les données d'inscription locales ont été supprimées. Vous pouvez maintenant vous inscrire à nouveau.", "success");
+        
+        // Réinitialiser l'état du composant
+        setEthereumAddress('');
+        setNetworkInfo(null);
+        setCurrentStep('form');
+        setErrors({});
+        
+        // Vérifier à nouveau la disponibilité de MetaMask
+        if (typeof window.ethereum !== 'undefined') {
+          setMetamaskAvailable(true);
+        }
+        
+        // Afficher un guide pour rafraîchir la page si nécessaire
+        setTimeout(() => {
+          showNotification("Si le problème persiste, essayez de rafraîchir la page", "info");
+        }, 5000);
+      } else {
+        showNotification("Erreur lors du nettoyage des données locales", "error");
+      }
+    } catch (error) {
+      console.error("Erreur lors du nettoyage des données:", error);
+      showNotification("Erreur: " + (error.message || "Une erreur s'est produite lors du nettoyage"), "error");
+    }
   };
   
   return (
@@ -274,6 +427,22 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
             </h2>
             <p className="text-sm">Connectez votre portefeuille et inscrivez-vous pour accéder à la bibliothèque</p>
           </div>
+
+          {/* Message pour les utilisateurs redirigés depuis l'emprunt */}
+          {redirectSource === 'borrow' && currentStep === 'form' && (
+            <div className="p-4 bg-blue-50 border-l-4 border-blue-500">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <BookOpen className="h-5 w-5 text-blue-500" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-blue-700">
+                    <strong>Pour emprunter des livres, veuillez d'abord vous inscrire.</strong> Nous vous recommandons de vous connecter au réseau <span className="font-bold">Sepolia Testnet</span> pour une meilleure expérience.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           
           {!metamaskAvailable && (
             <div className="bg-red-50 p-4 border-l-4 border-red-400">
@@ -299,7 +468,7 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
                 <div>
                   <span className="text-xs text-gray-500">Connecté à</span>
                   <div className="flex items-center">
-                    <div className={`w-2 h-2 rounded-full mr-2 ${networkInfo.supported ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                    <div className="w-2 h-2 rounded-full mr-2 bg-green-500"></div>
                     <span className="text-sm font-medium">{networkInfo.name}</span>
                   </div>
                 </div>
@@ -311,7 +480,13 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
             </div>
           )}
           
-          <form onSubmit={registerUser} className="p-6">
+          <form 
+            onSubmit={(e) => {
+              console.log("Formulaire soumis");
+              registerUser(e);
+            }} 
+            className="p-6"
+          >
             <div className="mb-6">
               <label className="block text-gray-700 font-medium mb-2" htmlFor="userName">
                 Votre nom complet
@@ -363,6 +538,23 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
               </div>
             </div>
             
+            {/* Connexion MetaMask */}
+            {!isConnected && (
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Étape 1: Connecter votre portefeuille
+                </label>
+                <button
+                  type="button"
+                  className="w-full flex justify-center items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 transition"
+                  onClick={handleConnectButtonClick}
+                >
+                  <img src="/metamask-fox.svg" alt="MetaMask" className="h-5 w-5 mr-2" />
+                  Connecter avec MetaMask
+                </button>
+              </div>
+            )}
+            
             <button
               type="submit"
               disabled={isSubmitting || !metamaskAvailable || currentStep !== 'form'}
@@ -371,6 +563,13 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
                   ? 'bg-gray-400 cursor-not-allowed' 
                   : 'bg-[#2A3B8C] hover:bg-[#1F2D6B]'
               } text-white py-2 px-4 rounded-md font-medium transition flex items-center justify-center`}
+              onClick={(e) => {
+                console.log("Bouton d'inscription cliqué");
+                if (!validateForm()) {
+                  e.preventDefault();
+                  return false;
+                }
+              }}
             >
               {isSubmitting ? (
                 <>
@@ -390,7 +589,7 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading }) => {
                 <li>• Une réputation de base vous sera attribuée</li>
                 <li>• Votre adresse de portefeuille servira d'identifiant</li>
                 <li>• Les étudiants et professeurs ont des droits d'accès différents</li>
-                {networkInfo && networkInfo.supported && (
+                {networkInfo && (
                   <li>• Réseau actuel: <span className="font-medium">{networkInfo.name}</span></li>
                 )}
               </ul>

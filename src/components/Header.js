@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { BookOpen, Menu, X, RefreshCw, LogOut } from 'lucide-react';
+import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut } from 'lucide-react';
+import web3Service from '../services/Web3Service';
 
-const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet }) => {
+const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet, showNotification }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
 
@@ -28,86 +29,137 @@ const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, c
     setShowAccountMenu(!showAccountMenu);
   };
 
+  // Ajouter une fonction pour connecter au réseau Ganache
+  const connectToGanache = async () => {
+    try {
+      const success = await web3Service.addGanacheNetwork();
+      if (success) {
+        showNotification("Réseau Ganache local configuré avec succès. Veuillez le sélectionner dans MetaMask.");
+      } else {
+        showNotification("Impossible d'ajouter automatiquement le réseau Ganache. Veuillez le configurer manuellement dans MetaMask.", "warning");
+      }
+    } catch (error) {
+      console.error("Erreur lors de la connexion au réseau Ganache:", error);
+      showNotification("Erreur: " + error.message, "error");
+    }
+  };
+
+  // Ajouter une fonction pour afficher le diagnostic
+  const showDiagnostic = async () => {
+    const status = await web3Service.getConnectionStatus();
+    console.log("--- DIAGNOSTIC DE CONNEXION ---");
+    console.log(JSON.stringify(status, null, 2));
+    
+    // Afficher un alert avec les informations principales
+    alert(`DIAGNOSTIC:
+    
+Réseau: ${status.network ? `${status.network.id} (${status.network.name})` : 'Non connecté'}
+Compte: ${status.account ? status.account.address : 'Non connecté'}
+Contrat: ${status.contract ? `${status.contract.address} (Code: ${status.contract.hasCode ? 'Oui' : 'Non'})` : 'Non initialisé'}
+Provider: ${status.provider ? `ChainID: ${status.provider.chainId}` : 'Non détecté'}
+Connecté: ${isConnected ? 'Oui' : 'Non'}
+Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
+    
+    // Déboguer le problème du bouton S'inscrire
+    console.log("Débogage du bouton S'inscrire:");
+    console.log("- Compte:", account);
+    console.log("- isConnected:", isConnected);
+    console.log("- isRegistered:", isRegistered);
+    console.log("- Bouton S'inscrire doit apparaître:", account && !isRegistered);
+  };
+
   return (
-    <header className="bg-white shadow">
-      <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-        <div className="flex items-center">
-          <div className="text-2xl font-bold text-[#2A3B8C] mr-2">
-            <BookOpen size={28} className="inline mr-2" />
-            <a 
-              href="#" 
-              onClick={(e) => { 
-                e.preventDefault(); 
-                setActiveTab('home'); 
-              }} 
-              className="hover:text-[#1F2D6B] transition"
-            >
-              BiblioChain
-            </a>
-          </div>
-        </div>
-
-        <div className="hidden md:flex items-center space-x-6">
-          <button
-            onClick={() => setActiveTab('home')}
-            className={`px-3 py-2 ${activeTab === 'home' ? 'text-[#2A3B8C] border-b-2 border-[#2A3B8C]' : 'text-gray-600'}`}
-            aria-current={activeTab === 'home' ? 'page' : undefined}
-          >
-            Accueil
-          </button>
-          <button
-            onClick={() => setActiveTab('catalog')}
-            className={`px-3 py-2 ${activeTab === 'catalog' ? 'text-[#2A3B8C] border-b-2 border-[#2A3B8C]' : 'text-gray-600'}`}
-            aria-current={activeTab === 'catalog' ? 'page' : undefined}
-          >
-            Catalogue
-          </button>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-3 py-2 ${activeTab === 'dashboard' ? 'text-[#2A3B8C] border-b-2 border-[#2A3B8C]' : 'text-gray-600'}`}
-            aria-current={activeTab === 'dashboard' ? 'page' : undefined}
-          >
-            Mon Espace
-          </button>
-          <button
-            onClick={() => setActiveTab('admin')}
-            className={`px-3 py-2 ${activeTab === 'admin' ? 'text-[#6A1B9A] border-b-2 border-[#6A1B9A]' : 'text-gray-600'}`}
-            aria-current={activeTab === 'admin' ? 'page' : undefined}
-          >
-            Admin
-          </button>
-        </div>
-
-        <div className="flex items-center">
-          {account ? (
-            <div className="flex items-center space-x-2 relative">
-              <button
-                onClick={refreshConnection}
-                className="text-gray-500 hover:text-[#2A3B8C] bg-gray-100 hover:bg-gray-200 p-1 rounded-full transition"
-                title="Rafraîchir la connexion"
+    <header className="bg-white shadow-md">
+      <div className="container mx-auto px-4 py-3">
+        {/* Barre de navigation supérieure */}
+        <div className="flex justify-between items-center">
+          {/* Logo et nom */}
+          <div className="flex items-center">
+            <div className="text-2xl font-bold text-[#2A3B8C] mr-2">
+              <BookOpen size={30} className="inline mr-2 text-[#2A3B8C]" />
+              <a 
+                href="#" 
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  setActiveTab('home'); 
+                }} 
+                className="hover:text-[#1F2D6B] transition"
               >
-                <RefreshCw size={16} />
-              </button>
-              
-              {isRegistered ? (
-                <>
+                BiblioChain
+              </a>
+            </div>
+          </div>
+
+          {/* Navigation principale - version desktop */}
+          <div className="hidden md:flex items-center space-x-2">
+            <button
+              onClick={() => setActiveTab('home')}
+              className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'home' ? 'bg-blue-100 text-[#2A3B8C] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              <Home size={18} className="mr-1" />
+              <span>Accueil</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('catalog')}
+              className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'catalog' ? 'bg-blue-100 text-[#2A3B8C] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              <BookmarkIcon size={18} className="mr-1" />
+              <span>Catalogue</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'dashboard' ? 'bg-blue-100 text-[#2A3B8C] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              <LayoutDashboard size={18} className="mr-1" />
+              <span>Mon Espace</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'admin' ? 'bg-purple-100 text-[#6A1B9A] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              <Settings size={18} className="mr-1" />
+              <span>Admin</span>
+            </button>
+            
+            {/* Bouton S'inscrire toujours visible */}
+            <button
+              onClick={() => setActiveTab('login')}
+              className={`flex items-center px-4 py-2 rounded-md transition font-medium ${activeTab === 'login' ? 'bg-yellow-200 text-yellow-800' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}`}
+            >
+              <User size={18} className="mr-1" />
+              <span>S'inscrire</span>
+            </button>
+          </div>
+
+          {/* Section connexion et compte */}
+          <div className="flex items-center">
+            {account ? (
+              <div className="flex items-center space-x-3">
+                {/* Statut de connexion */}
+                <div className="flex items-center">
                   <div className="relative">
                     <div 
-                      className="bg-[#2A3B8C]/10 text-[#2A3B8C] px-3 py-1 rounded-full text-sm font-medium flex items-center cursor-pointer"
+                      className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium cursor-pointer transition ${isRegistered ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}`}
                       onClick={toggleAccountMenu}
                     >
-                      <div className="w-2 h-2 rounded-full bg-[#4CAF50] mr-2"></div>
+                      <div className={`w-2 h-2 rounded-full mr-2 ${isRegistered ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
                       {`${account.substring(0, 6)}...${account.substring(account.length - 4)}`}
                     </div>
                     
                     {/* Menu déroulant du compte */}
                     {showAccountMenu && (
                       <div 
-                        className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10"
+                        className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg py-1 z-10 border border-gray-200"
                         onClick={handleAccountMenuClick}
                       >
-                        <div className="px-4 py-2 text-xs text-gray-500">Compte connecté</div>
-                        <div className="px-4 py-2 text-xs font-mono overflow-hidden text-ellipsis">{account}</div>
+                        <div className="px-4 py-2 text-xs text-gray-500 border-b">Compte connecté</div>
+                        <div className="px-4 py-2 text-xs font-mono overflow-hidden text-ellipsis break-all">{account}</div>
+                        <div className="px-4 py-2 text-xs">
+                          Statut: {isRegistered ? 
+                            <span className="text-green-600 font-medium">Inscrit</span> : 
+                            <span className="text-yellow-600 font-medium">Non inscrit</span>
+                          }
+                        </div>
                         <hr className="my-1" />
                         <button
                           onClick={() => setActiveTab('dashboard')}
@@ -115,148 +167,186 @@ const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, c
                         >
                           Mon Espace
                         </button>
+                        
+                        {!isRegistered && (
+                          <button
+                            onClick={() => setActiveTab('login')}
+                            className="block w-full text-left px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
+                          >
+                            S'inscrire
+                          </button>
+                        )}
+                        
+                        {/* Bouton de déconnexion */}
                         <button
-                          onClick={disconnectWallet}
-                          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            disconnectWallet();
+                            setShowAccountMenu(false);
+                          }}
+                          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 border-t"
                         >
-                          <LogOut size={14} className="mr-2" /> Déconnecter
+                          <div className="flex items-center">
+                            <LogOut size={16} className="mr-2" />
+                            Déconnecter
+                          </div>
                         </button>
                       </div>
                     )}
                   </div>
-                  
-                  {/* Bouton de déconnexion directement visible */}
+                </div>
+                
+                {/* Outils */}
+                <div className="flex items-center space-x-1">
                   <button
-                    onClick={disconnectWallet}
-                    className="flex items-center text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-md transition"
-                    title="Déconnecter"
+                    onClick={refreshConnection}
+                    className="text-gray-500 hover:text-[#2A3B8C] bg-gray-100 hover:bg-gray-200 p-1.5 rounded-md transition"
+                    title="Rafraîchir la connexion"
                   >
-                    <LogOut size={16} className="mr-1" />
-                    <span className="hidden lg:inline">Déconnecter</span>
+                    <RefreshCw size={16} />
                   </button>
-                </>
-              ) : (
+                  
+                  <button
+                    onClick={showDiagnostic}
+                    className="text-gray-500 hover:text-orange-500 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-md transition"
+                    title="Diagnostic de connexion"
+                  >
+                    <AlertCircle size={16} />
+                  </button>
+                  
+                  <button
+                    onClick={connectToGanache}
+                    className="text-gray-500 hover:text-green-500 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-md transition"
+                    title="Connecter au réseau Ganache local"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                      <polyline points="17 2 12 7 7 2"></polyline>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2">
+                {/* Bouton de connexion */}
                 <button
-                  className="bg-[#FFD700] text-[#2A3B8C] px-4 py-1 rounded-md font-medium hover:bg-yellow-400 transition"
-                  onClick={() => setActiveTab('login')}
+                  className="bg-[#2A3B8C] text-white px-4 py-2 rounded-md font-medium hover:bg-[#1F2D6B] transition flex items-center"
+                  onClick={connectToMetaMask}
                 >
-                  S'inscrire
+                  <span>Connecter</span>
                 </button>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center space-x-2">
-              <button
-                className="bg-[#2A3B8C] text-white px-4 py-1 rounded-md font-medium hover:bg-[#1F2D6B] transition"
-                onClick={connectToMetaMask}
-              >
-                Connecter
-              </button>
-              <button
-                onClick={refreshConnection}
-                className="text-gray-500 hover:text-[#2A3B8C] bg-gray-100 hover:bg-gray-200 p-1 rounded-full transition"
-                title="Rafraîchir la connexion"
-              >
-                <RefreshCw size={16} />
-              </button>
-            </div>
-          )}
-          <button
-            className="md:hidden ml-4 text-gray-600"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+                
+                {/* Outils */}
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={showDiagnostic}
+                    className="text-gray-500 hover:text-orange-500 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-md transition"
+                    title="Diagnostic de connexion"
+                  >
+                    <AlertCircle size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Bouton du menu mobile */}
+            <button
+              className="md:hidden ml-4 text-gray-600 hover:text-gray-800 bg-gray-100 p-1.5 rounded-md"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
       </div>
       
+      {/* Menu mobile */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-white border-t">
-          <div className="container mx-auto px-4 py-2">
-            <button
-              onClick={() => {
-                setActiveTab('home');
-                setMobileMenuOpen(false);
-              }}
-              className={`block w-full text-left px-3 py-2 ${activeTab === 'home' ? 'text-[#2A3B8C] font-medium' : 'text-gray-600'}`}
-            >
-              Accueil
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('catalog');
-                setMobileMenuOpen(false);
-              }}
-              className={`block w-full text-left px-3 py-2 ${activeTab === 'catalog' ? 'text-[#2A3B8C] font-medium' : 'text-gray-600'}`}
-            >
-              Catalogue
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('dashboard');
-                setMobileMenuOpen(false);
-              }}
-              className={`block w-full text-left px-3 py-2 ${activeTab === 'dashboard' ? 'text-[#2A3B8C] font-medium' : 'text-gray-600'}`}
-            >
-              Mon Espace
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('admin');
-                setMobileMenuOpen(false);
-              }}
-              className={`block w-full text-left px-3 py-2 ${activeTab === 'admin' ? 'text-[#6A1B9A] font-medium' : 'text-gray-600'}`}
-            >
-              Admin
-            </button>
-            
-            {isConnected && (
-              <>
-                {!isRegistered && (
-                  <button
-                    onClick={() => {
-                      setActiveTab('login');
-                      setMobileMenuOpen(false);
-                    }}
-                    className="block w-full text-left px-3 py-2 text-[#FFD700] font-medium"
-                  >
-                    S'inscrire
-                  </button>
-                )}
-                
-                <button
-                  onClick={() => {
-                    disconnectWallet();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="block w-full text-left px-3 py-2 text-red-600 font-medium flex items-center"
-                >
-                  <LogOut size={16} className="mr-2" /> Déconnecter
-                </button>
-              </>
-            )}
-            
-            {!isConnected && (
+        <div className="md:hidden bg-white border-t shadow-inner">
+          <div className="container mx-auto px-4 py-3">
+            <div className="space-y-2">
               <button
                 onClick={() => {
-                  connectToMetaMask();
+                  setActiveTab('home');
                   setMobileMenuOpen(false);
                 }}
-                className="block w-full text-left px-3 py-2 bg-[#2A3B8C] text-white font-medium rounded-md mt-2"
+                className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'home' ? 'bg-blue-100 text-[#2A3B8C]' : 'text-gray-600 hover:bg-gray-100'}`}
               >
-                Connecter à MetaMask
+                <Home size={18} className="mr-2" /> Accueil
               </button>
-            )}
-            
-            <button
-              onClick={() => {
-                refreshConnection();
-                setMobileMenuOpen(false);
-              }}
-              className="block w-full text-left px-3 py-2 text-gray-600 mt-2 flex items-center"
-            >
-              <RefreshCw size={16} className="mr-2" /> Rafraîchir la connexion
-            </button>
+              <button
+                onClick={() => {
+                  setActiveTab('catalog');
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'catalog' ? 'bg-blue-100 text-[#2A3B8C]' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                <BookmarkIcon size={18} className="mr-2" /> Catalogue
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('dashboard');
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'dashboard' ? 'bg-blue-100 text-[#2A3B8C]' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                <LayoutDashboard size={18} className="mr-2" /> Mon Espace
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('admin');
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'admin' ? 'bg-purple-100 text-[#6A1B9A]' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                <Settings size={18} className="mr-2" /> Admin
+              </button>
+              
+              <div className="pt-2 border-t">
+                {/* Bouton d'inscription */}
+                <button
+                  onClick={() => {
+                    setActiveTab('login');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center justify-center w-full px-3 py-2.5 mt-2 rounded-md bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+                >
+                  <User size={18} className="mr-2" /> S'inscrire
+                </button>
+                
+                {/* Bouton de diagnostic */}
+                <button
+                  onClick={() => {
+                    showDiagnostic();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center w-full px-3 py-2 mt-2 rounded-md text-gray-600 hover:bg-gray-100"
+                >
+                  <AlertCircle size={18} className="mr-2" /> Diagnostic
+                </button>
+                
+                {/* Bouton de déconnexion pour mobile */}
+                {isConnected && (
+                  <button
+                    onClick={() => {
+                      disconnectWallet();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center w-full px-3 py-2 mt-2 rounded-md text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut size={18} className="mr-2" /> Déconnecter
+                  </button>
+                )}
+              </div>
+              
+              {/* Section compte (si connecté) */}
+              {account && (
+                <div className="mt-3 pt-2 border-t">
+                  <div className="px-3 py-1 text-sm text-gray-500">Compte connecté</div>
+                  <div className="px-3 py-1 text-xs font-mono break-all">{account}</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
