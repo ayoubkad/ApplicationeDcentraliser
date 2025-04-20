@@ -16,6 +16,7 @@
     "@truffle/hdwallet-provider": "^2.1.15",
     "chai": "^4.3.7",
     "chai-as-promised": "^7.1.1",
+    "dotenv": "^16.5.0",
     "ipfs-http-client": "^60.0.1",
     "library-dapp": "file:",
     "lucide-react": "^0.294.0",

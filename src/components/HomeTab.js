@@ -1,5 +1,5 @@
-import React from 'react';
-import { User, Book, CheckCircle, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { User, Book, CheckCircle, ArrowRight, UserPlus, Loader } from 'lucide-react';
 import BookCard from './common/BookCard';
 
 const recentBooks = [
@@ -9,7 +9,32 @@ const recentBooks = [
   { id: 4, title: "Histoire de l'Art", author: "Ernst Gombrich", isAvailable: true, ipfsHash: "QmA...", category: "Art", pageCount: 412, publishedDate: "2020-01-30", isbn: "978-2-0814-1212-2" }
 ];
 
-const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, account, connectToMetaMask, disconnectWallet }) => {
+const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, account, connectToMetaMask: propConnectToMetaMask, disconnectWallet }) => {
+  const [currentAccount, setCurrentAccount] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleConnectToMetaMask = async () => {
+    if (window.ethereum) {
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        setCurrentAccount(accounts[0]);
+        console.log('Connected account:', accounts[0]);
+      } catch (error) {
+        console.error('Error connecting to MetaMask:', error);
+      }
+    } else {
+      alert('MetaMask non détecté. Veuillez installer MetaMask pour continuer.');
+    }
+  };
+
+  const handleRegistration = () => {
+    setIsLoading(true);
+    setTimeout(() => {
+      setIsLoading(false);
+      setActiveTab('login');
+    }, 2000);
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="bg-[#2A3B8C] text-[#F8F9FA] rounded-lg shadow-md overflow-hidden mb-8">
@@ -19,35 +44,68 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, account, connect
             <p className="mb-6">Une solution moderne pour emprunter et gérer des livres universitaires avec transparence et sécurité grâce à la blockchain.</p>
             <div className="flex flex-wrap gap-3">
               <button
-                className="bg-[#FFD700] text-[#2A3B8C] px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-yellow-400 transition"
+                className="bg-[#FFD700] text-[#2A3B8C] px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-yellow-400 transition flex items-center"
                 onClick={() => setActiveTab('catalog')}
                 aria-label="Explorer le catalogue de livres"
               >
                 Explorer le catalogue
+                <ArrowRight size={18} className="ml-2" />
               </button>
-              
-              {isConnected && (
+
+              {!currentAccount && (
                 <button
-                  className="bg-red-500 text-white px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-red-600 transition flex items-center"
-                  onClick={disconnectWallet}
+                  className="text-sm text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-md transition flex items-center"
+                  onClick={handleConnectToMetaMask}
                 >
-                  <LogOut size={18} className="mr-2" />
-                  Déconnecter
+                  <User size={16} className="mr-2" />
+                  Se connecter avec MetaMask
                 </button>
               )}
             </div>
-            
-            {isConnected && account && (
-              <div className="mt-4 text-sm bg-white/20 rounded-md px-3 py-2 inline-block">
-                Connecté: {`${account.substring(0, 6)}...${account.substring(account.length - 4)}`}
-              </div>
-            )}
           </div>
           <div className="md:w-1/2 h-64 bg-[#1F2D6B] flex items-center justify-center">
             <img src="/api/placeholder/600/400" alt="Bibliothèque universitaire" className="h-full w-full object-cover" />
           </div>
         </div>
       </div>
+
+      {isConnected && !isRegistered && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 mb-8 rounded-lg shadow-md">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <UserPlus className="h-6 w-6 text-yellow-600" aria-hidden="true" />
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-semibold text-yellow-800">Complétez votre inscription</h3>
+              <p className="mt-2 text-sm text-yellow-700">
+                Pour emprunter des livres, vous devez finaliser votre inscription. Cela ne prendra que quelques secondes.
+              </p>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  className={`inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white ${
+                    isLoading ? 'bg-yellow-400' : 'bg-yellow-600 hover:bg-yellow-700'
+                  } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500`}
+                  onClick={handleRegistration}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader className="h-5 w-5 mr-2 animate-spin" />
+                      Inscription en cours...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="h-5 w-5 mr-2" />
+                      S'inscrire maintenant
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Livres récemment ajoutés</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
@@ -56,6 +114,8 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, account, connect
             key={book.id} 
             book={book} 
             handleBorrowBook={handleBorrowBook}
+            isConnected={isConnected}
+            isRegistered={isRegistered}
           />
         ))}
       </div>
@@ -68,6 +128,14 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, account, connect
           </div>
           <h3 className="text-xl font-bold text-gray-800 mb-2">1. Inscrivez-vous</h3>
           <p className="text-gray-600">Connectez votre portefeuille et inscrivez-vous comme étudiant ou professeur.</p>
+          {isConnected && !isRegistered && (
+            <button
+              className="mt-3 px-3 py-1 text-sm bg-yellow-100 text-yellow-800 rounded-md hover:bg-yellow-200 transition"
+              onClick={() => setActiveTab('login')}
+            >
+              S'inscrire maintenant
+            </button>
+          )}
         </div>
         <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
           <div className="bg-[#2A3B8C]/10 text-[#2A3B8C] w-12 h-12 rounded-full flex items-center justify-center mb-4">
@@ -84,6 +152,32 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, account, connect
           <p className="text-gray-600">Retournez les livres avant la date limite pour maintenir votre réputation.</p>
         </div>
       </div>
+
+      {(!isConnected || !isRegistered) && (
+        <div className="bg-gradient-to-r from-blue-800 to-indigo-800 text-white rounded-lg shadow-md p-6 mt-8">
+          <h2 className="text-xl font-bold mb-2">Prêt à emprunter des livres ?</h2>
+          <p className="mb-4">L'inscription est rapide et vous donne un accès immédiat à notre bibliothèque entière.</p>
+          <div className="flex flex-wrap gap-3">
+            {!isConnected ? (
+              <button
+                className="bg-white text-blue-800 px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-blue-50 transition flex items-center"
+                onClick={handleConnectToMetaMask}
+              >
+                <User size={18} className="mr-2" />
+                Se connecter d'abord
+              </button>
+            ) : !isRegistered ? (
+              <button
+                className="bg-yellow-500 text-white px-6 py-2 rounded-md font-semibold shadow-sm hover:bg-yellow-600 transition flex items-center"
+                onClick={() => setActiveTab('login')}
+              >
+                <UserPlus size={18} className="mr-2" />
+                Compléter mon inscription
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
