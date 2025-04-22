@@ -141,9 +141,6 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
             if (registered && web3Service.getUserReputation) {
               const reputation = await web3Service.getUserReputation();
               setUserReputation(Number(reputation));
-              showNotification("Connected successfully to your wallet", "success");
-            } else {
-              showNotification("Please register to use all features", "warning");
             }
           }
         } else {

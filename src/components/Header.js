@@ -34,7 +34,7 @@ const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, c
     try {
       const success = await web3Service.addGanacheNetwork();
       if (success) {
-        showNotification("Réseau Ganache local configuré avec succès. Veuillez le sélectionner dans MetaMask.");
+        showNotification("Réseau Ganache local configuré avec succès. Veuillez le sélectionner dans MetaMask.", "success");
       } else {
         showNotification("Impossible d'ajouter automatiquement le réseau Ganache. Veuillez le configurer manuellement dans MetaMask.", "warning");
       }

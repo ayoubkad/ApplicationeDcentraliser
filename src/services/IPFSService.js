@@ -1,98 +1,112 @@
-import { create } from 'ipfs-http-client';
+import axios from 'axios';
 
 class IPFSService {
   constructor() {
-    this.ipfs = null;
-    this.initialized = false;
+    this.apiUrl = 'http://127.0.0.1:5001/api/v0';
   }
 
-  async initialize() {
-    if (this.initialized) return true;
-    
+  async testConnection() {
     try {
-      const projectId = 'YOUR_INFURA_PROJECT_ID';
-      const projectSecret = 'YOUR_INFURA_PROJECT_SECRET';
-      const auth = 'Basic ' + Buffer.from(projectId + ':' + projectSecret).toString('base64');
-
-      this.ipfs = create({
-        host: 'ipfs.infura.io',
-        port: 5001,
-        protocol: 'https',
-        headers: {
-          authorization: auth,
-        },
-      });
-      
-      this.initialized = true;
-      return true;
+      const response = await axios.post(`${this.apiUrl}/id`);
+      return {
+        connected: true,
+        nodeInfo: response.data
+      };
     } catch (error) {
-      console.error('Échec de l\'initialisation IPFS:', error);
-      return false;
+      return {
+        connected: false,
+        error: error.message
+      };
     }
   }
 
   async uploadFile(file) {
-    if (!this.initialized) await this.initialize();
-    
+    if (!file) throw new Error('Aucun fichier fourni.');
+
     try {
-      const added = await this.ipfs.add(file, {
-        progress: (prog) => console.log(`Téléchargement: ${prog}`)
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post(`${this.apiUrl}/add`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       });
-      
-      return added.path;
+
+      // Correction clé : Ne pas parser une réponse déjà parsée par Axios
+      return response.data.Hash; // Accès direct au Hash
     } catch (error) {
-      console.error('Erreur lors du téléchargement du fichier vers IPFS:', error);
-      throw error;
+      // Amélioration du message d'erreur
+      throw new Error(`Erreur upload fichier: ${error.response?.data || error.message}`);
     }
   }
 
-  async uploadBookData(bookData, coverImage) {
-    if (!this.initialized) await this.initialize();
-    
+  async uploadPDF(pdfFile) {
+    if (!pdfFile || pdfFile.type !== 'application/pdf') {
+      throw new Error('Fichier PDF valide requis.');
+    }
+    return await this.uploadFile(pdfFile);
+  }
+
+  async uploadBookData(bookData, coverImage, pdfFile = null) {
     try {
-      let coverHash = null;
-      if (coverImage) {
-        coverHash = await this.uploadFile(coverImage);
+      // Validation améliorée
+      if (!bookData.title?.trim() || !bookData.author?.trim()) {
+        throw new Error("Titre et auteur requis");
       }
-      
+
+      // Gestion parallèle des uploads
+      const [coverHash, pdfHash] = await Promise.all([
+        coverImage ? this.uploadFile(coverImage) : Promise.resolve(null),
+        pdfFile ? this.uploadPDF(pdfFile) : Promise.resolve(null)
+      ]);
+
+      // Construction des métadonnées
       const bookMetadata = {
         ...bookData,
         coverImageHash: coverHash,
-        dateAdded: new Date().toISOString()
+        pdfHash: pdfHash,
+        dateAdded: new Date().toISOString(),
       };
-      
-      const jsonData = JSON.stringify(bookMetadata);
-      const added = await this.ipfs.add(jsonData);
-      
+
+      // Sérialisation sécurisée
+      const jsonData = JSON.stringify(bookMetadata, (key, value) => {
+        return value ?? null; // Gestion des undefined
+      });
+
+      // Création du fichier metadata
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const metadataFile = new File([blob], 'metadata.json', {
+        type: 'application/json',
+      });
+
+      // Upload des métadonnées
+      const metadataHash = await this.uploadFile(metadataFile);
+
       return {
-        metadataHash: added.path,
-        coverHash: coverHash
+        metadataHash,
+        coverHash,
+        pdfHash
       };
     } catch (error) {
-      console.error('Erreur lors du téléchargement des données du livre vers IPFS:', error);
-      throw error;
+      // Stack trace complète
+      throw new Error(`Erreur upload livre: ${error.message}`);
     }
   }
 
   async getFile(ipfsHash) {
-    if (!this.initialized) await this.initialize();
-    
     try {
-      const data = [];
-      
-      for await (const chunk of this.ipfs.cat(ipfsHash)) {
-        data.push(chunk);
-      }
-      
-      return Buffer.concat(data);
+      const response = await axios.post(`${this.apiUrl}/cat?arg=${ipfsHash}`, null, {
+        responseType: 'arraybuffer',
+      });
+      return Buffer.from(response.data);
     } catch (error) {
-      console.error(`Erreur lors de la récupération du fichier depuis IPFS (${ipfsHash}):`, error);
-      throw error;
+      throw new Error(`Erreur récupération ${ipfsHash}: ${error.response?.data || error.message}`);
     }
   }
 
   getIPFSGatewayURL(ipfsHash) {
-    return `https://ipfs.io/ipfs/${ipfsHash}`;
+    return ipfsHash ? `http://127.0.0.1:8080/ipfs/${ipfsHash}` : '';
   }
 }
 

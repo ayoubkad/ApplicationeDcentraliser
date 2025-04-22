@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { Plus, User, CheckCircle, Upload, X } from 'lucide-react';
-import ipfsService from '../IPFSService';
+import React, { useState, useRef, useEffect } from 'react';
+import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import ipfsService from '../services/IPFSService';
 import web3Service from '../services/Web3Service';
 
-const AdminTab = ({ setNotification, setIsLoading }) => {
+const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   const [newBook, setNewBook] = useState({
     title: '',
     author: '',
@@ -12,16 +12,37 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
     pageCount: '',
     publishedDate: '',
     description: '',
+    price: '0',
   });
   const [bookCover, setBookCover] = useState(null);
   const [bookCoverPreview, setBookCoverPreview] = useState('');
+  const [bookPDF, setBookPDF] = useState(null);
   const [ipfsHash, setIpfsHash] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [ipfsStatus, setIpfsStatus] = useState({ checking: true, connected: false });
   const fileInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
 
-  const showNotification = (message, type) => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 5000);
+  useEffect(() => {
+    checkIPFSConnection();
+  }, []);
+
+  const checkIPFSConnection = async () => {
+    setIpfsStatus({ checking: true, connected: false });
+
+    try {
+      const status = await ipfsService.testConnection();
+      setIpfsStatus({ checking: false, connected: status.connected, nodeInfo: status.nodeInfo || '' });
+
+      if (status.connected) {
+        setNotification({ message: 'Connexion IPFS établie avec succès', type: 'success' });
+      } else {
+        setNotification({ message: 'Impossible de se connecter à IPFS: ' + (status.error || 'Erreur inconnue'), type: 'error' });
+      }
+    } catch (error) {
+      setIpfsStatus({ checking: false, connected: false, error: error.message });
+      setNotification({ message: 'Erreur lors de la vérification de la connexion IPFS', type: 'error' });
+    }
   };
 
   const handleNewBookChange = (e) => {
@@ -39,19 +60,45 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
     }
   };
 
+  const handlePDFChange = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'application/pdf') {
+      setBookPDF(file);
+      setNotification({ message: 'Fichier PDF sélectionné: ' + file.name, type: 'info' });
+    } else if (file) {
+      setNotification({ message: 'Seuls les fichiers PDF sont acceptés', type: 'warning' });
+    }
+  };
+
   const uploadToIPFS = async () => {
     if (!bookCover) {
-      showNotification('Veuillez sélectionner une image de couverture', 'warning');
+      setNotification({
+        message: 'Veuillez sélectionner une image de couverture',
+        type: 'warning'
+      });
       return null;
     }
+
     setIsUploading(true);
     try {
-      const result = await ipfsService.uploadBookData(newBook, bookCover);
+      const result = await ipfsService.uploadBookData(
+        newBook,
+        bookCover,
+        bookPDF
+      );
+
       setIpfsHash(result.metadataHash);
-      showNotification('Livre téléchargé sur IPFS avec succès!', 'success');
+      setNotification({
+        message: 'Livre téléchargé sur IPFS avec succès! CID: ' + result.metadataHash,
+        type: 'success'
+      });
+
       return result.metadataHash;
     } catch (error) {
-      showNotification('Erreur lors du téléchargement vers IPFS', 'error');
+      setNotification({
+        message: 'Erreur IPFS: ' + error.message.replace('Erreur upload livre: ', ''),
+        type: 'error'
+      });
       return null;
     } finally {
       setIsUploading(false);
@@ -60,22 +107,65 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
 
   const handleAddBook = async () => {
     if (!newBook.title || !newBook.author) {
-      showNotification("Le titre et l'auteur sont obligatoires", "warning");
+      setNotification({ message: "Le titre et l'auteur sont obligatoires", type: "warning" });
       return;
     }
     setIsLoading(true);
     try {
       const hash = await uploadToIPFS();
       if (hash) {
-        await web3Service.addBook(newBook.title, newBook.author, hash);
-        showNotification('Livre ajouté avec succès!', 'success');
-        setNewBook({ title: '', author: '', category: '', isbn: '', pageCount: '', publishedDate: '', description: '' });
-        setBookCover(null);
-        setBookCoverPreview('');
-        setIpfsHash('');
+        setNotification({ 
+          message: "Transaction en cours d'envoi à la blockchain... Veuillez confirmer dans MetaMask", 
+          type: "info" 
+        });
+        
+        // Appel à addBook avec les paramètres exacts attendus par le contrat: titre, auteur, ipfsHash
+        await web3Service.addBook(
+          newBook.title, 
+          newBook.author, 
+          hash // Hash IPFS généré
+        );
+        
+        setNotification({ 
+          message: 'Livre ajouté avec succès à la blockchain! Vous pouvez maintenant le voir dans le catalogue.', 
+          type: 'success' 
+        });
+        
+        resetForm();
       }
     } catch (error) {
-      showNotification("Erreur lors de l'ajout du livre: " + error.message, "error");
+      console.error("Erreur détaillée:", error);
+      
+      if (error.message && error.message.includes("Transaction rejetée")) {
+        setNotification({ 
+          message: "Vous avez annulé la transaction dans MetaMask. Aucun livre n'a été ajouté.", 
+          type: "warning" 
+        });
+      } 
+      else if (error.message && error.message.includes("délai d'attente")) {
+        setNotification({ 
+          message: "La transaction a pris trop de temps. Veuillez vérifier votre connexion réseau et réessayer.", 
+          type: "error" 
+        });
+      }
+      else if (error.message && error.message.includes("Internal JSON-RPC error")) {
+        setNotification({ 
+          message: "Erreur de communication avec la blockchain. Essayez de réinitialiser MetaMask (Paramètres > Avancé > Réinitialiser le compte) et relancez votre navigateur.", 
+          type: "error" 
+        });
+      }
+      else if (error.message && error.message.includes("gas")) {
+        setNotification({ 
+          message: "Problème de frais de transaction. Essayez d'augmenter la limite de gaz dans MetaMask ou réessayez plus tard.", 
+          type: "error" 
+        });
+      }
+      else {
+        setNotification({ 
+          message: "Erreur lors de l'ajout du livre: " + error.message, 
+          type: "error" 
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -96,16 +186,60 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
       isbn: '',
       pageCount: '',
       publishedDate: '',
-      description: ''
+      description: '',
+      price: '0',
     });
     setBookCover(null);
     setBookCoverPreview('');
+    setBookPDF(null);
     setIpfsHash('');
   };
 
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-[#6A1B9A] mb-6">Administration</h1>
+
+      {/* IPFS Connection Status */}
+      <div className="mb-6 bg-white p-4 rounded-lg shadow flex items-center justify-between">
+        <div className="flex items-center">
+          {ipfsStatus.checking ? (
+            <div className="w-5 h-5 mr-3 border-2 border-[#6A1B9A] border-t-transparent rounded-full animate-spin"></div>
+          ) : ipfsStatus.connected ? (
+            <Wifi size={20} className="text-green-500 mr-3" />
+          ) : (
+            <WifiOff size={20} className="text-red-500 mr-3" />
+          )}
+          <span className="font-medium">
+            Statut IPFS: {ipfsStatus.checking ? 'Vérification...' : ipfsStatus.connected ? 'Connecté' : 'Déconnecté'}
+          </span>
+        </div>
+        <div className="flex space-x-2">
+          <button
+            className="bg-[#6A1B9A] text-white px-3 py-1.5 rounded text-sm hover:bg-[#590D88] transition"
+            onClick={checkIPFSConnection}
+          >
+            Vérifier la connexion
+          </button>
+          <button
+            className="bg-orange-500 text-white px-3 py-1.5 rounded text-sm hover:bg-orange-600 transition flex items-center"
+            onClick={() => {
+              // Proposer à l'utilisateur de réinitialiser son compte MetaMask
+              if (window.confirm("Résoudre les problèmes de transaction MetaMask ?\n\nCette action vous guidera pour résoudre les erreurs JSON-RPC dans MetaMask. Aucune donnée ne sera perdue.")) {
+                setNotification({
+                  message: "Pour réinitialiser MetaMask: 1) Ouvrez l'extension 2) Cliquez sur les 3 points verticaux 3) Paramètres > Avancé > Réinitialiser le compte",
+                  type: "info"
+                });
+                
+                // Ouvrir une nouvelle fenêtre avec des instructions détaillées
+                window.open("https://metamask.zendesk.com/hc/en-us/articles/360015488891-How-to-reset-an-account", "_blank");
+              }
+            }}
+          >
+            <RefreshCw size={16} className="mr-1" />
+            Résoudre problèmes MetaMask
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
@@ -235,6 +369,24 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="price">
+                Prix (ETH)
+              </label>
+              <input
+                type="number"
+                id="price"
+                name="price"
+                value={newBook.price}
+                onChange={handleNewBookChange}
+                step="0.01"
+                min="0"
+                className="w-full border rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-[#6A1B9A] focus:border-[#6A1B9A]"
+                placeholder="Prix en ETH"
+              />
+              <p className="text-xs text-gray-500 mt-1">Le prix sera converti en Wei sur la blockchain</p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="publishedDate">
                 Date de publication
               </label>
@@ -263,7 +415,7 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
               ></textarea>
             </div>
 
-            <div className="md:col-span-2">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Image de Couverture
               </label>
@@ -307,6 +459,51 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Fichier PDF du Livre
+              </label>
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-md p-6 flex flex-col items-center justify-center group hover:border-[#6A1B9A] transition cursor-pointer"
+                onClick={() => pdfInputRef.current?.click()}
+              >
+                {bookPDF ? (
+                  <div className="relative w-full">
+                    <div className="flex items-center justify-center p-3 bg-gray-100 rounded-md">
+                      <FileText size={36} className="text-[#6A1B9A] mr-3" />
+                      <div className="flex-1 truncate">
+                        <p className="font-medium">{bookPDF.name || 'Fichier sans nom'}</p>
+                        <p className="text-xs text-gray-500">{bookPDF.size ? Math.round(bookPDF.size / 1024) : 0} KB</p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBookPDF(null);
+                        }}
+                        className="bg-white rounded-full p-1 shadow-md hover:bg-red-100"
+                      >
+                        <X size={16} className="text-red-500" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <FileText size={36} className="text-gray-400 group-hover:text-[#6A1B9A] transition mb-2" />
+                    <p className="text-sm text-gray-500 mb-1">Déposez un fichier PDF ou</p>
+                    <button className="text-sm text-[#6A1B9A] font-medium">parcourez vos fichiers</button>
+                    <p className="text-xs text-gray-400 mt-2">Le PDF sera stocké sur IPFS</p>
+                  </>
+                )}
+                <input
+                  type="file"
+                  ref={pdfInputRef}
+                  className="hidden"
+                  accept="application/pdf"
+                  onChange={handlePDFChange}
+                />
+              </div>
+            </div>
+
             {ipfsHash && (
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="ipfsHash">
@@ -345,7 +542,7 @@ const AdminTab = ({ setNotification, setIsLoading }) => {
               <button
                 className="bg-[#2A3B8C] text-white px-4 py-2 rounded-md font-medium hover:bg-[#1F2D6B] transition flex items-center"
                 onClick={uploadToIPFS}
-                disabled={isUploading || !bookCover}
+                disabled={isUploading || !bookCover || !ipfsStatus.connected}
               >
                 {isUploading ? (
                   <>

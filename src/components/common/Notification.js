@@ -18,11 +18,32 @@ const Notification = ({ notification, setNotification }) => {
     info: <BookOpen size={20} className="mr-2" />
   };
 
+  // Safely extract notification properties
+  const type = typeof notification === 'object' && notification !== null 
+    ? (notification.type || 'info') 
+    : 'info';
+    
+  // Handle different message types: strings, objects, etc.
+  let message = '';
+  if (typeof notification === 'string') {
+    message = notification;
+  } else if (typeof notification === 'object' && notification !== null) {
+    message = notification.message || '';
+    // If message is still an object, stringify it
+    if (typeof message === 'object') {
+      try {
+        message = JSON.stringify(message);
+      } catch (e) {
+        message = 'Notification';
+      }
+    }
+  }
+
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-md">
-      <div className={`${bgColors[notification.type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center`}>
-        {icons[notification.type]}
-        <span>{notification.message}</span>
+      <div className={`${bgColors[type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center`}>
+        {icons[type]}
+        <span>{message}</span>
         <button
           onClick={() => setNotification(null)}
           className="ml-4 text-white hover:text-gray-200"
