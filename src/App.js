@@ -328,7 +328,7 @@ const App = () => {
       console.log("Tentative de connexion à MetaMask...");
       
       // Vérification de la présence de MetaMask
-      if (!window.ethereum && !window.web3) {
+      if (!window.ethereum) {
         console.error("Aucun provider Ethereum détecté");
         showNotification("MetaMask n'est pas installé. Veuillez l'installer pour continuer.", "error");
         return;
