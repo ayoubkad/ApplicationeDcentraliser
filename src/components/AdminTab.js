@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw } from 'lucide-react';
-import ipfsService from '../services/IPFSService';
+import ipfsService from '../IPFSService';
 import web3Service from '../services/Web3Service';
 
 const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
@@ -31,17 +31,52 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     setIpfsStatus({ checking: true, connected: false });
 
     try {
-      const status = await ipfsService.testConnection();
-      setIpfsStatus({ checking: false, connected: status.connected, nodeInfo: status.nodeInfo || '' });
+      // Check IPFS connection with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Délai d'attente dépassé")), 10000)
+      );
+      
+      const connectionPromise = ipfsService.testConnection();
+      
+      // Race between connection and timeout
+      const status = await Promise.race([connectionPromise, timeoutPromise]);
+      
+      setIpfsStatus({ 
+        checking: false, 
+        connected: status.connected, 
+        nodeInfo: status.nodeInfo || '',
+        lastChecked: new Date().toLocaleTimeString()
+      });
 
       if (status.connected) {
         setNotification({ message: 'Connexion IPFS établie avec succès', type: 'success' });
       } else {
-        setNotification({ message: 'Impossible de se connecter à IPFS: ' + (status.error || 'Erreur inconnue'), type: 'error' });
+        setNotification({ 
+          message: 'Impossible de se connecter à IPFS: ' + (status.error || 'Erreur inconnue'), 
+          type: 'error' 
+        });
       }
     } catch (error) {
-      setIpfsStatus({ checking: false, connected: false, error: error.message });
-      setNotification({ message: 'Erreur lors de la vérification de la connexion IPFS', type: 'error' });
+      console.error("Erreur lors de la vérification de la connexion IPFS:", error);
+      
+      let errorMessage = error.message;
+      if (error.message === "Délai d'attente dépassé") {
+        errorMessage = "Le serveur IPFS ne répond pas. Vérifiez que le daemon est en cours d'exécution.";
+      } else if (error.code === "ECONNREFUSED") {
+        errorMessage = "Connexion refusée. Vérifiez que le daemon IPFS est démarré sur le port 5001.";
+      }
+      
+      setIpfsStatus({ 
+        checking: false, 
+        connected: false, 
+        error: errorMessage,
+        lastChecked: new Date().toLocaleTimeString()
+      });
+      
+      setNotification({ 
+        message: 'Erreur lors de la vérification de la connexion IPFS: ' + errorMessage, 
+        type: 'error' 
+      });
     }
   };
 
@@ -209,9 +244,16 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
           ) : (
             <WifiOff size={20} className="text-red-500 mr-3" />
           )}
-          <span className="font-medium">
-            Statut IPFS: {ipfsStatus.checking ? 'Vérification...' : ipfsStatus.connected ? 'Connecté' : 'Déconnecté'}
-          </span>
+          <div>
+            <span className="font-medium">
+              Statut IPFS: {ipfsStatus.checking ? 'Vérification...' : ipfsStatus.connected ? 'Connecté' : 'Déconnecté'}
+            </span>
+            {!ipfsStatus.connected && ipfsStatus.error && (
+              <div className="text-sm text-red-600 mt-1">
+                Erreur: {ipfsStatus.error}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex space-x-2">
           <button
