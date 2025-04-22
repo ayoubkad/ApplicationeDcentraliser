@@ -16,8 +16,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0xcaa1256B7131f0b51469b33b6D6a1C9023812572', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0xcaa1256B7131f0b51469b33b6D6a1C9023812572'  // Ganache - Adresse déployée
+      1337: '0x7823136bEbccC752357B962c9B67c9ED453dd29D', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x7823136bEbccC752357B962c9B67c9ED453dd29D'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -27,7 +27,7 @@ class Web3Service {
     this.defaultGasLimit = 3000000; // Limite de gas par défaut élevée
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0xcaa1256B7131f0b51469b33b6D6a1C9023812572';
+    this.contractAddress = '0x7823136bEbccC752357B962c9B67c9ED453dd29D';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
