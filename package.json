@@ -29,6 +29,7 @@
     "web3": "^1.10.0"
   },
   "devDependencies": {
+    "@babel/parser": "^7.27.0",
     "@openzeppelin/contracts": "^4.9.3",
     "@openzeppelin/test-helpers": "^0.5.16",
     "autoprefixer": "^10.4.16",
