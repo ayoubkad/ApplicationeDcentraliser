@@ -1,51 +1,49 @@
-import { create } from 'ipfs-http-client';
+import axios from 'axios';
 
 class IPFSService {
   constructor() {
-    this.ipfs = null;
-    this.initialized = false;
-
-    // Configuration par défaut pour votre nœud IPFS
+    // Configuration par défaut pour les nœuds local et distant
     this.config = {
-      useRemoteNode: false, // false للاتصال المحلي، true للاتصال الخارجي
-      remoteNode: {
-        ipfsHost: '41.249.228.140', // العنوان العام لعقدتك
-        ipfsPort: 5001,
-        ipfsProtocol: 'http',
-        ipfsGateway: 'http://41.249.228.140:8080',
-        auth: {
-          username: null, // أضف اسم المستخدم إذا كنت تستخدم التوثيق
-          password: null  // أضف كلمة المرور إذا كنت تستخدم التوثيق
-        }
-      },
+      useRemoteNode: false, // False pour local, True pour distant
       localNode: {
-        ipfsHost: '127.0.0.1', // العقدة المحلية
-        ipfsPort: 5001,
-        ipfsProtocol: 'http',
-        ipfsGateway: 'http://127.0.0.1:8080',
+        apiUrl: 'http://127.0.0.1:5001/api/v0',
+        gateway: 'http://127.0.0.1:8080',
         auth: {
           username: null,
           password: null
         }
       },
-      peerID: '12D3KooWMhC55WnFvTdMx1Y2PaskHPuw4kXbxLmUyMYDMvL9mrqN',
-      debug: true // تفعيل وضع التصحيح لتتبع الأخطاء
+      remoteNode: {
+        apiUrl: 'http://41.249.228.140:5001/api/v0',
+        gateway: 'http://41.249.228.140:8080',
+        auth: {
+          username: null, // Ajoutez si nécessaire
+          password: null  // Ajoutez si nécessaire
+        }
+      },
+      debug: true // Activer le mode debug pour le suivi des erreurs
     };
 
-    this.connectionStatus = {
-      connected: false,
-      lastCheck: null,
-      error: null,
-      peers: []
-    };
+    // Sélectionner la configuration initiale
+    this.currentConfig = this.getCurrentConfig();
   }
 
-  // تحديد إعدادات العقدة بناءً على وضع الاتصال
+  // Sélectionner la configuration actuelle (local ou distant)
   getCurrentConfig() {
     return this.config.useRemoteNode ? this.config.remoteNode : this.config.localNode;
   }
 
-  // دالة لتسجيل الرسائل
+  // Configurer le service avec des paramètres personnalisés
+  configure(customConfig = {}) {
+    this.config = {
+      ...this.config,
+      ...customConfig
+    };
+    this.currentConfig = this.getCurrentConfig();
+    return this;
+  }
+
+  // Logger les messages pour le débogage
   log(message, level = 'info') {
     if (this.config.debug || level === 'error') {
       const timestamp = new Date().toISOString();
@@ -53,253 +51,143 @@ class IPFSService {
     }
   }
 
-  // تكوين الخدمة مع إعدادات مخصصة
-  configure(customConfig = {}) {
-    this.config = {
-      ...this.config,
-      ...customConfig
-    };
-
-    // إعادة تهيئة الاتصال لتطبيق الإعدادات الجديدة
-    this.initialized = false;
-    this.ipfs = null;
-
-    return this;
-  }
-
-  // تهيئة الاتصال بـ IPFS
-  async initialize() {
-    if (this.initialized) return true;
-
-    const currentConfig = this.getCurrentConfig();
-
+  // Tester la connexion au nœud IPFS
+  async testConnection() {
     try {
-      this.log(`Tentative de connexion au nœud IPFS: ${currentConfig.ipfsProtocol}://${currentConfig.ipfsHost}:${currentConfig.ipfsPort}`);
-
-      // إعداد رؤوس التوثيق إذا كانت موجودة
-      const headers = {};
-      if (currentConfig.auth.username && currentConfig.auth.password) {
-        const auth = btoa(`${currentConfig.auth.username}:${currentConfig.auth.password}`);
-        headers['Authorization'] = `Basic ${auth}`;
-      }
-
-      // إنشاء عميل IPFS
-      this.ipfs = create({
-        host: currentConfig.ipfsHost,
-        port: currentConfig.ipfsPort,
-        protocol: currentConfig.ipfsProtocol,
-        headers: headers
-      });
-
-      // التحقق من الاتصال
-      const id = await this.ipfs.id();
-      this.log(`Connecté au nœud IPFS avec ID: ${id.id}`);
-
-      // التحقق من PeerID
-      if (this.config.peerID && id.id !== this.config.peerID) {
-        this.log(`Le PeerID du nœud (${id.id}) ne correspond pas au PeerID attendu (${this.config.peerID}).`, 'warn');
-      }
-
-      // تحديث حالة الاتصال
-      this.connectionStatus = {
+      this.log(`Test de connexion à: ${this.currentConfig.apiUrl}`);
+      const headers = this.getAuthHeaders();
+      const response = await axios.post(`${this.currentConfig.apiUrl}/id`, null, { headers });
+      this.log('Connexion réussie !');
+      return {
         connected: true,
-        lastCheck: new Date(),
-        error: null,
-        nodeInfo: id
+        nodeInfo: response.data
       };
-
-      this.initialized = true;
-      return true;
     } catch (error) {
-      this.log(`Échec de l'initialisation d'IPFS: ${error.message}`, 'error');
-
-      this.connectionStatus = {
+      this.log(`Erreur de connexion: ${error.message}`, 'error');
+      return {
         connected: false,
-        lastCheck: new Date(),
-        error: error.message,
-        nodeInfo: null
+        error: error.message
       };
-
-      return false;
     }
   }
 
-  // التحقق من حالة الاتصال
-  async checkConnection() {
-    try {
-      if (!this.ipfs) {
-        await this.initialize();
-        return this.connectionStatus;
-      }
-
-      const id = await this.ipfs.id();
-      const peers = await this.ipfs.swarm.peers();
-
-      this.connectionStatus = {
-        connected: true,
-        lastCheck: new Date(),
-        error: null,
-        nodeInfo: id,
-        peers: peers.map(peer => ({
-          addr: peer.addr.toString(),
-          peer: peer.peer.toString()
-        }))
-      };
-
-      this.log(`Connexion vérifiée, ${peers.length} pairs connectés`);
-      return this.connectionStatus;
-    } catch (error) {
-      this.log(`Erreur lors de la vérification de la connexion: ${error.message}`, 'error');
-
-      this.connectionStatus = {
-        connected: false,
-        lastCheck: new Date(),
-        error: error.message,
-        peers: []
-      };
-
-      return this.connectionStatus;
+  // Générer les en-têtes pour l'authentification si nécessaire
+  getAuthHeaders() {
+    const headers = {};
+    const { username, password } = this.currentConfig.auth;
+    if (username && password) {
+      const auth = btoa(`${username}:${password}`);
+      headers['Authorization'] = `Basic ${auth}`;
     }
+    return headers;
   }
 
-  // الحصول على إحصائيات العقدة
-  async getNodeStats() {
-    if (!this.initialized) await this.initialize();
-
-    try {
-      const stats = {
-        nodeInfo: await this.ipfs.id(),
-        bandwidth: await this.ipfs.stats.bw(),
-        repoStats: await this.ipfs.stats.repo(),
-        peers: (await this.ipfs.swarm.peers()).length
-      };
-
-      return stats;
-    } catch (error) {
-      this.log(`Erreur lors de la récupération des statistiques: ${error.message}`, 'error');
-      throw error;
-    }
-  }
-
-  // رفع ملف إلى IPFS
+  // Téléverser un fichier sur IPFS
   async uploadFile(file) {
-    if (!this.initialized) await this.initialize();
+    if (!file) throw new Error('Aucun fichier fourni.');
 
     try {
-      const added = await this.ipfs.add(file, {
-        progress: (prog) => this.log(`Téléversement: ${prog} octets`)
-      });
+      this.log(`Téléversement du fichier: ${file.name}`);
+      const formData = new FormData();
+      formData.append('file', file);
 
-      this.log(`Fichier téléversé avec succès: ${added.path}`);
-      return added.path;
+      const headers = {
+        'Content-Type': 'multipart/form-data',
+        ...this.getAuthHeaders()
+      };
+
+      const response = await axios.post(`${this.currentConfig.apiUrl}/add`, formData, { headers });
+      this.log(`Fichier téléversé avec succès: ${response.data.Hash}`);
+      return response.data.Hash;
     } catch (error) {
-      this.log(`Erreur lors du téléversement du fichier sur IPFS: ${error.message}`, 'error');
-      throw error;
+      const errorMessage = error.response?.data?.Message || error.message;
+      this.log(`Erreur lors du téléversement: ${errorMessage}`, 'error');
+      throw new Error(`Erreur téléversement fichier: ${errorMessage}`);
     }
   }
 
-  // رفع بيانات كتاب إلى IPFS
-  async uploadBookData(bookData, coverImage) {
-    if (!this.initialized) await this.initialize();
+  // Téléverser un fichier PDF
+  async uploadPDF(pdfFile) {
+    if (!pdfFile || pdfFile.type !== 'application/pdf') {
+      throw new Error('Fichier PDF valide requis.');
+    }
+    return await this.uploadFile(pdfFile);
+  }
 
+  // Téléverser les données d'un livre (métadonnées, image de couverture, PDF)
+  async uploadBookData(bookData, coverImage, pdfFile = null) {
     try {
-      let coverHash = null;
-      if (coverImage) {
-        this.log('Téléversement de l\'image de couverture');
-        coverHash = await this.uploadFile(coverImage);
+      // Validation des champs requis
+      if (!bookData.title?.trim() || !bookData.author?.trim()) {
+        throw new Error("Titre et auteur requis");
       }
 
+      this.log('Téléversement des données du livre...');
+      // Téléversement parallèle des fichiers
+      const [coverHash, pdfHash] = await Promise.all([
+        coverImage ? this.uploadFile(coverImage) : Promise.resolve(null),
+        pdfFile ? this.uploadPDF(pdfFile) : Promise.resolve(null)
+      ]);
+
+      // Construction des métadonnées
       const bookMetadata = {
         ...bookData,
         coverImageHash: coverHash,
-        dateAdded: new Date().toISOString()
+        pdfHash: pdfHash,
+        dateAdded: new Date().toISOString(),
       };
 
-      this.log('Téléversement des métadonnées du livre');
-      const jsonData = JSON.stringify(bookMetadata);
-      const added = await this.ipfs.add(jsonData);
-
-      this.log(`Données du livre téléversées avec succès: ${added.path}`);
-      return {
-        metadataHash: added.path,
-        coverHash: coverHash
-      };
-    } catch (error) {
-      this.log(`Erreur lors du téléversement des données du livre sur IPFS: ${error.message}`, 'error');
-      throw error;
-    }
-  }
-
-  // استرجاع ملف من IPFS
-  async getFile(ipfsHash) {
-    if (!this.initialized) await this.initialize();
-
-    try {
-      this.log(`Récupération du fichier avec hash: ${ipfsHash}`);
-
-      const data = [];
-      for await (const chunk of this.ipfs.cat(ipfsHash)) {
-        data.push(chunk);
-      }
-
-      const result = Buffer.concat(data);
-      this.log(`Fichier récupéré avec succès, taille: ${result.length} octets`);
-
-      return result;
-    } catch (error) {
-      this.log(`Erreur lors de la récupération du fichier depuis IPFS (${ipfsHash}): ${error.message}`, 'error');
-      throw error;
-    }
-  }
-
-  // الحصول على رابط البوابة
-  getIPFSGatewayURL(ipfsHash) {
-    const currentConfig = this.getCurrentConfig();
-    return `${currentConfig.ipfsGateway}/ipfs/${ipfsHash}`;
-  }
-
-  // استخدام بوابة عامة كبديل
-  getPublicGatewayURL(ipfsHash) {
-    return `https://ipfs.io/ipfs/${ipfsHash}`;
-  }
-
-  // اختبار إمكانية الوصول إلى البوابة
-  async testGateway(gateway = null, timeout = 5000) {
-    const currentConfig = this.getCurrentConfig();
-    const testHash = 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG';
-    const url = gateway || currentConfig.ipfsGateway;
-
-    try {
-      this.log(`Test de la passerelle IPFS: ${url}`);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      const response = await fetch(`${url}/ipfs/${testHash}`, {
-        signal: controller.signal
+      // Sérialisation sécurisée
+      const jsonData = JSON.stringify(bookMetadata, (key, value) => {
+        return value ?? null; // Gestion des undefined
       });
 
-      clearTimeout(timeoutId);
+      // Création du fichier metadata
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const metadataFile = new File([blob], 'metadata.json', {
+        type: 'application/json',
+      });
 
-      const success = response.ok;
-      this.log(`Passerelle ${url} ${success ? 'accessible' : 'inaccessible'} (status: ${response.status})`);
+      // Téléversement des métadonnées
+      const metadataHash = await this.uploadFile(metadataFile);
+      this.log(`Données du livre téléversées avec succès: ${metadataHash}`);
 
       return {
-        gateway: url,
-        accessible: success,
-        status: response.status,
-        timeStamp: new Date()
+        metadataHash,
+        coverHash,
+        pdfHash
       };
     } catch (error) {
-      this.log(`Erreur lors du test de la passerelle ${url}: ${error.message}`, 'error');
-
-      return {
-        gateway: url,
-        accessible: false,
-        error: error.message,
-        timeStamp: new Date()
-      };
+      this.log(`Erreur lors du téléversement du livre: ${error.message}`, 'error');
+      throw new Error(`Erreur téléversement livre: ${error.message}`);
     }
+  }
+
+  // Récupérer un fichier depuis IPFS
+  async getFile(ipfsHash) {
+    try {
+      this.log(`Récupération du fichier: ${ipfsHash}`);
+      const headers = this.getAuthHeaders();
+      const response = await axios.post(
+        `${this.currentConfig.apiUrl}/cat?arg=${ipfsHash}`,
+        null,
+        {
+          headers,
+          responseType: 'arraybuffer',
+        }
+      );
+      this.log(`Fichier récupéré avec succès: ${ipfsHash}`);
+      return Buffer.from(response.data);
+    } catch (error) {
+      const errorMessage = error.response?.data?.Message || error.message;
+      this.log(`Erreur lors de la récupération ${ipfsHash}: ${errorMessage}`, 'error');
+      throw new Error(`Erreur récupération ${ipfsHash}: ${errorMessage}`);
+    }
+  }
+
+  // Obtenir l'URL de la passerelle IPFS
+  getIPFSGatewayURL(ipfsHash) {
+    return ipfsHash ? `${this.currentConfig.gateway}/ipfs/${ipfsHash}` : '';
   }
 }
 
