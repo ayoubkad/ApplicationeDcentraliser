@@ -32976,10 +32976,148 @@
   },
   "networks": {
     "5777": {
-      "events": {},
+      "events": {
+        "0x16b1db40dbf86a945842a8b64a0f1246f7549bb3fbb390b716cd12c74c888cc4": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "uint256",
+              "name": "bookId",
+              "type": "uint256"
+            },
+            {
+              "indexed": false,
+              "internalType": "string",
+              "name": "title",
+              "type": "string"
+            },
+            {
+              "indexed": false,
+              "internalType": "string",
+              "name": "author",
+              "type": "string"
+            },
+            {
+              "indexed": false,
+              "internalType": "string",
+              "name": "ipfsHash",
+              "type": "string"
+            }
+          ],
+          "name": "BookAdded",
+          "type": "event"
+        },
+        "0xd1a0beb554cca016caf8e9f2d05569e12ca4005aa76c644fbaf086f51d53976a": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "uint256",
+              "name": "bookId",
+              "type": "uint256"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "borrower",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "dueTime",
+              "type": "uint256"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "borrowId",
+              "type": "uint256"
+            }
+          ],
+          "name": "BookBorrowed",
+          "type": "event"
+        },
+        "0x4cb1bfcb12f7db392a797c088544704dbe1ffa99cbe7414e98c4e2a0ee164ee4": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "uint256",
+              "name": "bookId",
+              "type": "uint256"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "borrower",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "reputation",
+              "type": "uint256"
+            },
+            {
+              "indexed": false,
+              "internalType": "bool",
+              "name": "isLate",
+              "type": "bool"
+            }
+          ],
+          "name": "BookReturned",
+          "type": "event"
+        },
+        "0xfc577563f1b9a0461e24abef1e1fcc0d33d3d881f20b5df6dda59de4aae2c821": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "user",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "uint256",
+              "name": "newReputation",
+              "type": "uint256"
+            }
+          ],
+          "name": "ReputationUpdated",
+          "type": "event"
+        },
+        "0xc2e5d5da58bd71d1a2d14cdef02a4256d971b728088f8190d067ccfbae3bd73e": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "user",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "indexed": false,
+              "internalType": "enum LibraryDApp.Role",
+              "name": "role",
+              "type": "uint8"
+            }
+          ],
+          "name": "UserRegistered",
+          "type": "event"
+        }
+      },
       "links": {},
-      "address": "0x7823136bEbccC752357B962c9B67c9ED453dd29D",
-      "transactionHash": "0x86d6c99d312f0ec1a232d5a293b148555087ba6a937946a673fbbdb7790e836e"
+      "address": "0x9E35B0AD7FaD9a7F70C8Ca8e43B9f13a873B5BDD",
+      "transactionHash": "0x7ea6e66df6e1af9e0564d50f93c9303eb3b2562a8da1c33781ee0d3bb01242c2"
     },
     "1744933210971": {
       "events": {
@@ -33127,7 +33265,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-04-22T15:36:13.571Z",
+  "updatedAt": "2025-04-23T11:45:01.516Z",
   "networkType": "ethereum",
   "devdoc": {
     "kind": "dev",
