@@ -16,8 +16,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x7823136bEbccC752357B962c9B67c9ED453dd29D', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x7823136bEbccC752357B962c9B67c9ED453dd29D'  // Ganache - Adresse déployée
+      1337: '0xA3E1f2AC8B8CA8e4bd023dB3EF6c24513F884D2b', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0xA3E1f2AC8B8CA8e4bd023dB3EF6c24513F884D2b'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -27,7 +27,7 @@ class Web3Service {
     this.defaultGasLimit = 3000000; // Limite de gas par défaut élevée
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x7823136bEbccC752357B962c9B67c9ED453dd29D';
+    this.contractAddress = '0xA3E1f2AC8B8CA8e4bd023dB3EF6c24513F884D2b';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -78,23 +78,75 @@ class Web3Service {
   setupEventListeners() {
     if (window.ethereum) {
       // Écouteur pour les changements de compte
-      window.ethereum.on('accountsChanged', (accounts) => {
+      window.ethereum.on('accountsChanged', async (accounts) => {
         if (accounts.length === 0) {
           // Déconnexion
           this.resetState();
-          // Déclencher un événement personnalisé pour la déconnexion
           window.dispatchEvent(new CustomEvent('metamaskDisconnected'));
         } else {
-          // Changement de compte
-          this.account = accounts[0];
+          const newAccount = accounts[0];
+          const previousAccount = this.account;
+          this.account = newAccount;
           
-          // Réinitialiser le cache utilisateur lors du changement de compte
-          this.resetUserCache();
-          
-          // Déclencher un événement personnalisé pour le changement de compte
-          window.dispatchEvent(new CustomEvent('metamaskAccountChanged', {
-            detail: { account: accounts[0] }
-          }));
+          // Ne pas réinitialiser le cache complet, juste vérifier le nouveau compte
+          try {
+            // Vérifier si le nouveau compte est dans le cache
+            const lowerCaseAddress = newAccount.toLowerCase();
+            let isRegistered = this.userRegisteredCache.has(lowerCaseAddress) ? 
+                             this.userRegisteredCache.get(lowerCaseAddress) : 
+                             false;
+            
+            // Si pas dans le cache, vérifier dans localStorage
+            if (!isRegistered) {
+              const storedUsers = localStorage.getItem('registeredUsers');
+              if (storedUsers) {
+                const users = JSON.parse(storedUsers);
+                isRegistered = users.includes(lowerCaseAddress);
+              }
+            }
+            
+            // Si toujours pas trouvé et que le contrat est disponible, vérifier sur la blockchain
+            if (!isRegistered && this.contract) {
+              try {
+                isRegistered = await this.contract.methods.isUserRegistered(newAccount).call();
+                if (isRegistered) {
+                  // Mettre à jour le cache avec le résultat
+                  this.userRegisteredCache.set(lowerCaseAddress, true);
+                  
+                  // Mettre à jour localStorage
+                  let registeredUsers = [];
+                  const storedUsers = localStorage.getItem('registeredUsers');
+                  if (storedUsers) {
+                    registeredUsers = JSON.parse(storedUsers);
+                  }
+                  if (!registeredUsers.includes(lowerCaseAddress)) {
+                    registeredUsers.push(lowerCaseAddress);
+                    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+                  }
+                }
+              } catch (error) {
+                console.warn("Erreur lors de la vérification sur la blockchain:", error);
+              }
+            }
+            
+            // Déclencher l'événement approprié
+            window.dispatchEvent(new CustomEvent('metamaskAccountChanged', {
+              detail: { 
+                account: newAccount,
+                previousAccount,
+                isRegistered
+              }
+            }));
+            
+            // Si le compte n'est pas inscrit, déclencher un événement spécifique
+            if (!isRegistered) {
+              window.dispatchEvent(new CustomEvent('accountNeedsRegistration', {
+                detail: { account: newAccount }
+              }));
+            }
+          } catch (error) {
+            console.error("Erreur lors de la gestion du changement de compte:", error);
+          }
         }
       });
       
@@ -127,9 +179,8 @@ class Web3Service {
   
   // Nouvelle méthode pour réinitialiser le cache utilisateur
   resetUserCache() {
-    console.log("Réinitialisation du cache utilisateur");
-    // Vider le cache de l'utilisateur inscrit
-    this.userRegisteredCache = new Map();
+    // Ne rien faire - nous ne voulons plus réinitialiser le cache complet
+    console.log("Demande de réinitialisation du cache ignorée pour préserver les inscriptions");
   }
   
   // Ajouter une méthode pour nettoyer toutes les données d'inscription locales
@@ -645,7 +696,7 @@ class Web3Service {
           isRegistered = await this.contract.methods.isUserRegistered(this.account).call();
           console.log("Résultat de isUserRegistered:", isRegistered);
           if (isRegistered) {
-            this.userRegisteredCache.set(lowerCaseAddress, true);
+            this.userRegisteredCache.set(this.account.toLowerCase(), true);
             
             // Sauvegarder dans localStorage
             try {
@@ -654,8 +705,8 @@ class Web3Service {
               if (storedUsers) {
                 registeredUsers = JSON.parse(storedUsers);
               }
-              if (!registeredUsers.includes(lowerCaseAddress)) {
-                registeredUsers.push(lowerCaseAddress);
+              if (!registeredUsers.includes(this.account.toLowerCase())) {
+                registeredUsers.push(this.account.toLowerCase());
                 localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
               }
             } catch (saveError) {
@@ -674,7 +725,7 @@ class Web3Service {
         const reputation = await this.contract.methods.getUserReputation(this.account).call();
         console.log("Réputation de l'utilisateur:", reputation);
         if (parseInt(reputation) > 0) {
-          this.userRegisteredCache.set(lowerCaseAddress, true);
+          this.userRegisteredCache.set(this.account.toLowerCase(), true);
           
           // Sauvegarder dans localStorage
           try {
@@ -683,8 +734,8 @@ class Web3Service {
             if (storedUsers) {
               registeredUsers = JSON.parse(storedUsers);
             }
-            if (!registeredUsers.includes(lowerCaseAddress)) {
-              registeredUsers.push(lowerCaseAddress);
+            if (!registeredUsers.includes(this.account.toLowerCase())) {
+              registeredUsers.push(this.account.toLowerCase());
               localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
             }
           } catch (saveError) {
@@ -702,7 +753,7 @@ class Web3Service {
         const history = await this.contract.methods.getUserBorrowHistory(this.account).call();
         if (Array.isArray(history) && history.length > 0) {
           console.log("L'utilisateur a un historique d'emprunts:", history);
-          this.userRegisteredCache.set(lowerCaseAddress, true);
+          this.userRegisteredCache.set(this.account.toLowerCase(), true);
           
           // Sauvegarder dans localStorage
           try {
@@ -711,8 +762,8 @@ class Web3Service {
             if (storedUsers) {
               registeredUsers = JSON.parse(storedUsers);
             }
-            if (!registeredUsers.includes(lowerCaseAddress)) {
-              registeredUsers.push(lowerCaseAddress);
+            if (!registeredUsers.includes(this.account.toLowerCase())) {
+              registeredUsers.push(this.account.toLowerCase());
               localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
             }
           } catch (saveError) {
@@ -727,7 +778,7 @@ class Web3Service {
       
       // Si toutes les méthodes ont échoué, on considère que l'utilisateur n'est pas inscrit
       console.log("L'utilisateur n'est pas inscrit (selon toutes les méthodes disponibles)");
-      this.userRegisteredCache.set(lowerCaseAddress, false);
+      this.userRegisteredCache.set(this.account.toLowerCase(), false);
       return false;
     } catch (error) {
       console.error("Erreur générale lors de la vérification de l'inscription:", error);
