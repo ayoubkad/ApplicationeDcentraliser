@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw, ShieldAlert } from 'lucide-react';
 import ipfsService from '../services/IPFSService';
 import web3Service from '../services/Web3Service';
 
@@ -20,12 +20,48 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   const [ipfsHash, setIpfsHash] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [ipfsStatus, setIpfsStatus] = useState({ checking: true, connected: false });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
   const fileInputRef = useRef(null);
   const pdfInputRef = useRef(null);
 
   useEffect(() => {
     checkIPFSConnection();
+    checkAdminStatus();
+    
+    // Écouter les changements de compte MetaMask
+    window.addEventListener('metamaskAccountChanged', checkAdminStatus);
+    
+    return () => {
+      window.removeEventListener('metamaskAccountChanged', checkAdminStatus);
+    };
   }, []);
+
+  const checkAdminStatus = async () => {
+    setIsCheckingAdmin(true);
+    try {
+      // Vérifier si l'utilisateur est connecté à MetaMask
+      if (!web3Service.isConnected()) {
+        await web3Service.initialize();
+      }
+      
+      // Vérifier si l'utilisateur est administrateur
+      const adminStatus = await web3Service.isAdmin();
+      setIsAdmin(adminStatus);
+      
+      if (!adminStatus) {
+        setNotification({ 
+          message: 'Attention: Vous n\'avez pas les droits d\'administrateur pour ajouter des livres', 
+          type: 'warning' 
+        });
+      }
+    } catch (error) {
+      console.error("Erreur lors de la vérification du statut d'administrateur:", error);
+      setIsAdmin(false);
+    } finally {
+      setIsCheckingAdmin(false);
+    }
+  };
 
   const checkIPFSConnection = async () => {
     setIpfsStatus({ checking: true, connected: false });
@@ -106,6 +142,15 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   };
 
   const handleAddBook = async () => {
+    // Vérifier si l'utilisateur est administrateur
+    if (!isAdmin) {
+      setNotification({ 
+        message: "Opération non autorisée: seuls les administrateurs peuvent ajouter des livres", 
+        type: "error" 
+      });
+      return;
+    }
+    
     if (!newBook.title || !newBook.author) {
       setNotification({ message: "Le titre et l'auteur sont obligatoires", type: "warning" });
       return;
@@ -130,6 +175,21 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
           message: 'Livre ajouté avec succès à la blockchain! Vous pouvez maintenant le voir dans le catalogue.', 
           type: 'success' 
         });
+        
+        // Déclencher un événement pour informer les autres composants qu'un livre a été ajouté
+        window.dispatchEvent(new CustomEvent('bookAdded', {
+          detail: {
+            title: newBook.title,
+            author: newBook.author,
+            ipfsHash: hash,
+            category: newBook.category,
+            isbn: newBook.isbn,
+            pageCount: newBook.pageCount,
+            publishedDate: newBook.publishedDate,
+            description: newBook.description,
+            price: newBook.price
+          }
+        }));
         
         resetForm();
       }
@@ -157,6 +217,12 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       else if (error.message && error.message.includes("gas")) {
         setNotification({ 
           message: "Problème de frais de transaction. Essayez d'augmenter la limite de gaz dans MetaMask ou réessayez plus tard.", 
+          type: "error" 
+        });
+      }
+      else if (error.message && error.message.includes("revert") && error.message.includes("admin")) {
+        setNotification({ 
+          message: "Accès refusé: seuls les administrateurs peuvent ajouter des livres", 
           type: "error" 
         });
       }
@@ -195,9 +261,48 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     setIpfsHash('');
   };
 
+  // Afficher un message si l'utilisateur n'est pas administrateur
+  if (!isCheckingAdmin && !isAdmin) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg shadow-md">
+          <div className="flex items-center">
+            <ShieldAlert size={24} className="text-red-500 mr-3" />
+            <h2 className="text-xl font-bold text-red-700">Accès non autorisé</h2>
+          </div>
+          <p className="mt-3 text-red-600">
+            Seuls les administrateurs peuvent accéder à cette section. Si vous pensez que c'est une erreur, veuillez vérifier que :
+          </p>
+          <ul className="list-disc list-inside mt-2 text-red-600">
+            <li>Vous êtes connecté au compte MetaMask correct</li>
+            <li>Votre compte a bien les droits d'administrateur</li>
+            <li>Vous êtes connecté au bon réseau blockchain</li>
+          </ul>
+          <button 
+            className="mt-4 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition flex items-center"
+            onClick={checkAdminStatus}
+          >
+            <RefreshCw size={16} className="mr-2" />
+            Vérifier à nouveau
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-[#6A1B9A] mb-6">Administration</h1>
+
+      {/* Admin Status Banner */}
+      {isAdmin && (
+        <div className="mb-6 bg-green-50 p-4 rounded-lg border-l-4 border-green-500 shadow flex items-center">
+          <CheckCircle size={20} className="text-green-500 mr-3" />
+          <span className="font-medium text-green-700">
+            Connecté en tant qu'administrateur
+          </span>
+        </div>
+      )}
 
       {/* IPFS Connection Status */}
       <div className="mb-6 bg-white p-4 rounded-lg shadow flex items-center justify-between">

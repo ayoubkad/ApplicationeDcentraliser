@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, Download } from 'lucide-react';
+import { BookOpen, Download, Image } from 'lucide-react';
 import web3Service from '../../services/Web3Service';
 
 const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, isRegistered }) => {
@@ -30,11 +30,31 @@ const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, is
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
       {/* Image de couverture */}
       <div className="h-48 bg-gray-200 relative">
-        <img 
-          src={`https://picsum.photos/seed/${book.id}/300/200`} 
-          alt={`Couverture de ${book.title}`}
-          className="h-full w-full object-cover"
-        />
+        {book.coverImageUrl ? (
+          <img 
+            src={book.coverImageUrl} 
+            alt={`Couverture de ${book.title}`}
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              console.error("Erreur de chargement de l'image IPFS, utilisation d'une image alternative");
+              e.target.onerror = null;
+              e.target.src = `https://picsum.photos/seed/${book.id}/300/200`;
+            }}
+          />
+        ) : (
+          <div className="h-full w-full flex items-center justify-center bg-gray-100">
+            <div className="text-center p-4">
+              <Image 
+                size={40} 
+                className="mx-auto text-gray-400" 
+              />
+              <p className="text-sm text-gray-500 mt-2">
+                {book.title || "Couverture non disponible"}
+              </p>
+            </div>
+          </div>
+        )}
+        
         {!book.isAvailable && (
           <div className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold px-2 py-1 m-2 rounded">
             Emprunté
@@ -51,12 +71,12 @@ const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, is
           <>
             <div className="text-xs text-gray-500 mb-3">
               <span className="inline-block mr-3">{book.category}</span>
-              <span>{book.pageCount} pages</span>
+              {book.pageCount && <span>{book.pageCount} pages</span>}
             </div>
           </>
         )}
         
-        <div className="flex justify-between items-center mt-3">
+        <div className="flex justify-between items-center">
           {book.isAvailable ? (
             <>
               {!isConnected ? (

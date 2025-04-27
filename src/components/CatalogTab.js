@@ -1,20 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Book, BookX, ArrowDown, ArrowUp, Info, Download } from 'lucide-react';
+import { Search, Filter, Book, BookX, ArrowDown, ArrowUp, Info, Download, RefreshCw } from 'lucide-react';
 import BookCard from './common/BookCard';
-
-// Simuler des données pour la maquette
-const books = [
-  { id: 1, title: "Principes d'Économie", author: "Gregory Mankiw", isAvailable: true, ipfsHash: "QmX...", category: "Économie", pageCount: 528, publishedDate: "2019-05-10", isbn: "978-2-7590-2369-1" },
-  { id: 2, title: "Introduction à l'Algorithmique", author: "Thomas Cormen", isAvailable: false, ipfsHash: "QmY...", category: "Informatique", pageCount: 752, publishedDate: "2015-03-22", isbn: "978-2-1007-2998-7" },
-  { id: 3, title: "Physique Quantique", author: "Claude Cohen-Tannoudji", isAvailable: true, ipfsHash: "QmZ...", category: "Sciences", pageCount: 624, publishedDate: "2018-09-15", isbn: "978-2-1007-1288-0" },
-  { id: 4, title: "Histoire de l'Art", author: "Ernst Gombrich", isAvailable: true, ipfsHash: "QmA...", category: "Art", pageCount: 412, publishedDate: "2020-01-30", isbn: "978-2-0814-1212-2" },
-  { id: 5, title: "Bases de données", author: "Abraham Silberschatz", isAvailable: true, ipfsHash: "QmB...", category: "Informatique", pageCount: 620, publishedDate: "2018-05-21", isbn: "978-2-4159-0357-1" },
-  { id: 6, title: "Les Misérables", author: "Victor Hugo", isAvailable: false, ipfsHash: "QmC...", category: "Littérature", pageCount: 1200, publishedDate: "1862-01-01", isbn: "978-2-0703-7951-4" },
-  { id: 7, title: "Macroéconomie", author: "Paul Krugman", isAvailable: true, ipfsHash: "QmD...", category: "Économie", pageCount: 450, publishedDate: "2017-09-10", isbn: "978-2-0814-1212-2" },
-  { id: 8, title: "Introduction à l'Intelligence Artificielle", author: "Stuart Russell", isAvailable: true, ipfsHash: "QmE...", category: "Informatique", pageCount: 520, publishedDate: "2019-02-15", isbn: "978-2-8652-1749-5" },
-];
+import web3Service from '../services/Web3Service';
 
 const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
+  const [books, setBooks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('');
@@ -25,17 +17,43 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
   const [stats, setStats] = useState({ total: 0, available: 0, categories: {} });
   const booksPerPage = 8;
 
+  // Charger les livres depuis la blockchain
+  const loadBooks = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Vérifier si Web3Service est initialisé
+      if (!web3Service.isInitialized()) {
+        await web3Service.initialize();
+      }
+      
+      // Utiliser la nouvelle fonction getAllLivres pour récupérer les livres avec toutes leurs métadonnées
+      const livresComplets = await web3Service.getAllLivres();
+      console.log("Livres complets récupérés depuis IPFS et blockchain:", livresComplets);
+      
+      setBooks(livresComplets);
+      calculateStats(livresComplets);
+    } catch (error) {
+      console.error("Erreur lors du chargement des livres:", error);
+      setError("Impossible de charger les livres. Veuillez vérifier votre connexion et réessayer.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Calculer les statistiques du catalogue
-  useEffect(() => {
+  const calculateStats = (bookList) => {
     const categoriesCount = {};
     let availableCount = 0;
     
-    books.forEach(book => {
+    bookList.forEach(book => {
       // Compter par catégorie
-      if (categoriesCount[book.category]) {
-        categoriesCount[book.category]++;
-      } else {
-        categoriesCount[book.category] = 1;
+      if (book.category) {
+        if (categoriesCount[book.category]) {
+          categoriesCount[book.category]++;
+        } else {
+          categoriesCount[book.category] = 1;
+        }
       }
       
       // Compter les livres disponibles
@@ -45,20 +63,36 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
     });
     
     setStats({
-      total: books.length,
+      total: bookList.length,
       available: availableCount,
       categories: categoriesCount
     });
-  }, []);
+  };
+
+  // Charger les livres au montage du composant et quand isConnected change
+  useEffect(() => {
+    loadBooks();
+    
+    // Écouter les événements d'ajout de livre
+    window.addEventListener('bookAdded', loadBooks);
+    
+    return () => {
+      window.removeEventListener('bookAdded', loadBooks);
+    };
+  }, [isConnected]);
 
   // Filtrer et trier les livres
   const getFilteredBooks = () => {
     // Filtrage
     const filtered = books.filter(book => {
-      const matchesSearch = book.title.toLowerCase().includes(search.toLowerCase()) || 
-                           book.author.toLowerCase().includes(search.toLowerCase()) ||
-                           book.isbn.includes(search);
-      const matchesCategory = categoryFilter === '' || book.category === categoryFilter;
+      const matchesSearch = 
+        (book.title && book.title.toLowerCase().includes(search.toLowerCase())) || 
+        (book.author && book.author.toLowerCase().includes(search.toLowerCase())) ||
+        (book.isbn && book.isbn.includes(search));
+      
+      const matchesCategory = categoryFilter === '' || 
+                             (book.category && book.category === categoryFilter);
+      
       const matchesAvailability = availabilityFilter === '' || 
                                  (availabilityFilter === 'available' && book.isAvailable) || 
                                  (availabilityFilter === 'borrowed' && !book.isAvailable);
@@ -72,13 +106,19 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
       
       // Tri par différents champs
       if (sortBy === 'title') {
-        comparison = a.title.localeCompare(b.title);
+        comparison = (a.title || '').localeCompare(b.title || '');
       } else if (sortBy === 'author') {
-        comparison = a.author.localeCompare(b.author);
+        comparison = (a.author || '').localeCompare(b.author || '');
       } else if (sortBy === 'date') {
-        comparison = new Date(a.publishedDate) - new Date(b.publishedDate);
+        // Gérer le cas où l'une des dates est manquante
+        const dateA = a.publishedDate ? new Date(a.publishedDate) : new Date(0);
+        const dateB = b.publishedDate ? new Date(b.publishedDate) : new Date(0);
+        comparison = dateA - dateB;
       } else if (sortBy === 'pages') {
-        comparison = a.pageCount - b.pageCount;
+        comparison = (a.pageCount || 0) - (b.pageCount || 0);
+      } else if (sortBy === 'id') {
+        // Tri par ID (plus récent en premier par défaut)
+        comparison = parseInt(a.id) - parseInt(b.id);
       }
       
       // Inverser le tri si descendant
@@ -160,6 +200,14 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
               <ArrowDown size={18} className="ml-2 text-gray-500" />
             }
           </button>
+          <button
+            className="flex items-center justify-center px-4 py-2 border rounded-lg hover:bg-gray-50 transition"
+            onClick={loadBooks}
+            aria-label="Rafraîchir la liste des livres"
+          >
+            <RefreshCw size={18} className="mr-2 text-[#2A3B8C]" />
+            <span>Actualiser</span>
+          </button>
         </div>
       </div>
 
@@ -229,6 +277,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
                 <option value="author">Auteur</option>
                 <option value="date">Date de publication</option>
                 <option value="pages">Nombre de pages</option>
+                <option value="id">Identifiant (récent d'abord)</option>
               </select>
             </div>
             <div>
@@ -261,16 +310,42 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
         </div>
       )}
 
-      {/* Message de résultats */}
-      <div className="text-sm text-gray-600 mb-4">
-        {filteredBooks.length === 0 ? (
-          "Aucun livre ne correspond à votre recherche."
-        ) : (
-          `${filteredBooks.length} livre${filteredBooks.length > 1 ? 's' : ''} trouvé${filteredBooks.length > 1 ? 's' : ''}`
-        )}
-      </div>
+      {/* Message d'erreur */}
+      {error && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {filteredBooks.length === 0 ? (
+      {/* État de chargement */}
+      {loading && (
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2A3B8C]"></div>
+          <span className="ml-3 text-gray-600">Chargement des livres...</span>
+        </div>
+      )}
+
+      {/* Message de résultats */}
+      {!loading && (
+        <div className="text-sm text-gray-600 mb-4">
+          {filteredBooks.length === 0 ? (
+            "Aucun livre ne correspond à votre recherche."
+          ) : (
+            `${filteredBooks.length} livre${filteredBooks.length > 1 ? 's' : ''} trouvé${filteredBooks.length > 1 ? 's' : ''}`
+          )}
+        </div>
+      )}
+
+      {!loading && filteredBooks.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12">
           <BookX size={64} className="text-gray-300 mb-4" />
           <p className="text-gray-500 text-lg font-medium">Aucun livre ne correspond à votre recherche.</p>
@@ -283,22 +358,24 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {currentBooks.map((book) => (
-            <BookCard
-              key={book.id}
-              book={book}
-              handleBorrowBook={handleBorrowBook}
-              showDetails={true}
-              isConnected={isConnected}
-              isRegistered={isRegistered}
-            />
-          ))}
-        </div>
+        !loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {currentBooks.map((book) => (
+              <BookCard
+                key={book.id}
+                book={book}
+                handleBorrowBook={handleBorrowBook}
+                showDetails={true}
+                isConnected={isConnected}
+                isRegistered={isRegistered}
+              />
+            ))}
+          </div>
+        )
       )}
 
       {/* Pagination */}
-      {filteredBooks.length > booksPerPage && (
+      {!loading && filteredBooks.length > booksPerPage && (
         <div className="flex justify-center mt-8">
           <nav className="flex items-center space-x-1" aria-label="Pagination">
             <button 

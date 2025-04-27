@@ -1,5 +1,6 @@
 import Web3 from 'web3';
 import LibraryDAppABI from '../LibraryDAppABI.json';
+import ipfsService from './IPFSService';
 
 class Web3Service {
   constructor() {
@@ -16,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x9E35B0AD7FaD9a7F70C8Ca8e43B9f13a873B5BDD', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x9E35B0AD7FaD9a7F70C8Ca8e43B9f13a873B5BDD'  // Ganache - Adresse déployée
+      1337: '0x7a542BdF5463B516a3820012324Ace4f77a946fD', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x7a542BdF5463B516a3820012324Ace4f77a946fD'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -27,7 +28,7 @@ class Web3Service {
     this.defaultGasLimit = 3000000; // Limite de gas par défaut élevée
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x9E35B0AD7FaD9a7F70C8Ca8e43B9f13a873B5BDD';
+    this.contractAddress = '0x7a542BdF5463B516a3820012324Ace4f77a946fD';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -76,105 +77,73 @@ class Web3Service {
   
   // Configuration des écouteurs d'événements MetaMask
   setupEventListeners() {
-    if (window.ethereum) {
-      // Écouteur pour les changements de compte
-      window.ethereum.on('accountsChanged', async (accounts) => {
-        if (accounts.length === 0) {
-          // Déconnexion
-          this.resetState();
-          window.dispatchEvent(new CustomEvent('metamaskDisconnected'));
-        } else {
-          const newAccount = accounts[0];
-          const previousAccount = this.account;
-          this.account = newAccount;
-          
-          // Ne pas réinitialiser le cache complet, juste vérifier le nouveau compte
-          try {
-            // Vérifier si le nouveau compte est dans le cache
-            const lowerCaseAddress = newAccount.toLowerCase();
-            let isRegistered = this.userRegisteredCache.has(lowerCaseAddress) ? 
-                             this.userRegisteredCache.get(lowerCaseAddress) : 
-                             false;
-            
-            // Si pas dans le cache, vérifier dans localStorage
-            if (!isRegistered) {
-              const storedUsers = localStorage.getItem('registeredUsers');
-              if (storedUsers) {
-                const users = JSON.parse(storedUsers);
-                isRegistered = users.includes(lowerCaseAddress);
-              }
-            }
-            
-            // Si toujours pas trouvé et que le contrat est disponible, vérifier sur la blockchain
-            if (!isRegistered && this.contract) {
-              try {
-                isRegistered = await this.contract.methods.isUserRegistered(newAccount).call();
-                if (isRegistered) {
-                  // Mettre à jour le cache avec le résultat
-                  this.userRegisteredCache.set(lowerCaseAddress, true);
-                  
-                  // Mettre à jour localStorage
-                  let registeredUsers = [];
-                  const storedUsers = localStorage.getItem('registeredUsers');
-                  if (storedUsers) {
-                    registeredUsers = JSON.parse(storedUsers);
-                  }
-                  if (!registeredUsers.includes(lowerCaseAddress)) {
-                    registeredUsers.push(lowerCaseAddress);
-                    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-                  }
-                }
-              } catch (error) {
-                console.warn("Erreur lors de la vérification sur la blockchain:", error);
-              }
-            }
-            
-            // Déclencher l'événement approprié
-            window.dispatchEvent(new CustomEvent('metamaskAccountChanged', {
-              detail: { 
-                account: newAccount,
-                previousAccount,
-                isRegistered
-              }
-            }));
-            
-            // Si le compte n'est pas inscrit, déclencher un événement spécifique
-            if (!isRegistered) {
-              window.dispatchEvent(new CustomEvent('accountNeedsRegistration', {
-                detail: { account: newAccount }
-              }));
-            }
-          } catch (error) {
-            console.error("Erreur lors de la gestion du changement de compte:", error);
-          }
-        }
-      });
+    if (!window.ethereum) {
+      console.warn("MetaMask non disponible, impossible de configurer les écouteurs d'événements");
+      return;
+    }
+
+    // Suppression des écouteurs existants pour éviter les doublons
+    this.removeAllEventListeners();
+
+    // Écouter les changements de compte
+    window.ethereum.on('accountsChanged', async (accounts) => {
+      console.log('Changement de compte détecté:', accounts);
       
-      // Écouteur pour les changements de réseau
-      window.ethereum.on('chainChanged', (chainId) => {
-        // Convertir le chainId hexadécimal en décimal
-        const networkId = parseInt(chainId, 16);
-        this.networkId = networkId;
-        
-        // Déclencher un événement personnalisé pour le changement de réseau
-        window.dispatchEvent(new CustomEvent('metamaskNetworkChanged', {
-          detail: { 
-            networkId: networkId,
-            networkName: this.getNetworkName(networkId)
-          }
-        }));
-        
-        // Réinitialiser l'état et vérifier si le nouveau réseau est supporté
-        this.resetState(false);
-        this.initialize();
-      });
-      
-      // Écouteur pour la déconnexion
-      window.ethereum.on('disconnect', () => {
+      if (accounts.length === 0) {
+        // Déconnecté
+        this.account = null;
         this.resetState();
         window.dispatchEvent(new CustomEvent('metamaskDisconnected'));
-      });
-    }
+      } else {
+        // Changement de compte
+        const newAccount = accounts[0];
+        const oldAccount = this.account;
+        this.account = newAccount;
+        
+        // Vérifier si le nouvel utilisateur est déjà inscrit
+        try {
+          const isRegistered = await this.isUserRegistered(newAccount);
+          
+          // Informer l'application du changement de compte
+          window.dispatchEvent(new CustomEvent('metamaskAccountChanged', {
+            detail: {
+              account: newAccount,
+              oldAccount: oldAccount,
+              isRegistered: isRegistered
+            }
+          }));
+          
+          // Si l'utilisateur n'est pas inscrit, réinitialiser certains états
+          if (!isRegistered) {
+            this.resetUserCache();
+          }
+        } catch (error) {
+          console.error("Erreur lors de la vérification d'inscription après changement de compte:", error);
+        }
+      }
+    });
+
+    // Écouter les changements de réseau
+    window.ethereum.on('chainChanged', (chainId) => {
+      console.log('Changement de réseau détecté:', chainId);
+      
+      // Conversion du chainId hex en décimal pour plus de lisibilité
+      const networkId = parseInt(chainId, 16);
+      
+      // Initialiser à nouveau le contrat avec le nouveau réseau
+      this.tryInitializeContract(networkId);
+      
+      // Informer l'application du changement de réseau
+      window.dispatchEvent(new CustomEvent('metamaskNetworkChanged', {
+        detail: {
+          chainId: chainId,
+          networkId: networkId,
+          networkName: this.getNetworkName(networkId)
+        }
+      }));
+    });
+
+    console.log("Écouteurs d'événements MetaMask configurés avec succès");
   }
   
   // Nouvelle méthode pour réinitialiser le cache utilisateur
@@ -319,191 +288,281 @@ class Web3Service {
 
   // Initialisation principale
   async initialize() {
-    // Éviter plusieurs initialisations
-    if (this.initialized) {
-      console.log("Web3Service déjà initialisé");
-      return true;
-    }
-    
     try {
-      // Vérifier si MetaMask est installé
-      if (window.ethereum) {
-        // Utiliser le provider de MetaMask
+      // Vérifier si déjà initialisé
+      if (this.initialized && this.web3 && this.account) {
+        console.log("Service Web3 déjà initialisé");
+        return true;
+      }
+
+      console.log("Démarrage de l'initialisation de Web3Service");
+      
+      // Réinitialiser l'état
+      this.resetState();
+
+      // Vérifier l'installation de MetaMask
+      if (!this.isMetaMaskInstalled()) {
+        console.warn("MetaMask n'est pas installé");
+        this.dispatchWeb3Event('no-metamask');
+        return false;
+      }
+
+      try {
+        // Se connecter à Web3
         this.web3 = new Web3(window.ethereum);
-        console.log("Provider Web3 initialisé avec MetaMask");
+        console.log("Connexion à Web3 établie");
+
+        // Récupérer les comptes
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         
-        try {
-          // Demander à l'utilisateur de se connecter à MetaMask
-          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          
-          if (accounts.length > 0) {
-            this.account = accounts[0];
-            console.log("Compte connecté:", this.account);
-            
-            // Obtenir l'ID du réseau immédiatement après la connexion
-            try {
-              const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-              this.networkId = parseInt(chainId, 16);
-              console.log("Réseau connecté via chainId:", this.networkId, this.getNetworkName(this.networkId));
-            } catch (chainError) {
-              console.warn("Erreur lors de la récupération du chainId:", chainError);
-              // Fallback avec web3.eth.net.getId()
-              try {
-                this.networkId = await this.web3.eth.net.getId();
-                console.log("Réseau connecté via getId:", this.networkId, this.getNetworkName(this.networkId));
-              } catch (netIdError) {
-                console.error("Impossible de déterminer l'ID du réseau:", netIdError);
-                // Utiliser un ID de réseau par défaut pour le développement
-                this.networkId = 1337; // Réseau de développement local
-                console.log("Utilisation de l'ID de réseau par défaut:", this.networkId);
-              }
-            }
-          } else {
-            console.warn("Aucun compte n'a été autorisé par l'utilisateur");
-            return false; // Échec si aucun compte n'est disponible
-          }
-        } catch (error) {
-          // L'utilisateur a refusé la connexion ou une autre erreur s'est produite
-          console.error("Erreur lors de la demande de comptes:", error);
+        if (!accounts || accounts.length === 0) {
+          console.warn("Aucun compte autorisé");
+          this.dispatchWeb3Event('no-accounts');
           return false;
         }
-      } else {
-        // Tenter de se connecter à Ganache
-        console.log("MetaMask non détecté, tentative de connexion à Ganache sur", this.ganacheUrl);
-        try {
-          this.web3 = new Web3(new Web3.providers.HttpProvider(this.ganacheUrl));
-          this.isGanache = true;
+        
+        this.account = accounts[0];
+        console.log("Compte connecté:", this.account);
+        
+        // Obtenir l'ID du réseau
+        const networkId = await this.web3.eth.net.getId();
+        console.log("Réseau détecté:", networkId);
+        
+        // Vérifier le support du réseau
+        if (!this.isNetworkSupported()) {
+          console.warn("Réseau non supporté:", networkId);
+          this.dispatchWeb3Event('wrong-network', { networkId });
           
-          // Vérifier si la connexion a réussi
-          const accounts = await this.web3.eth.getAccounts();
-          if (accounts.length > 0) {
-            this.account = accounts[0];
-            this.networkId = await this.web3.eth.net.getId();
-            console.log("Connecté à Ganache avec le compte:", this.account, "et réseau:", this.networkId);
+          // Ajouter un délai avant de demander le changement de réseau
+          setTimeout(() => {
+            this.switchNetwork(1337); // Essayer de basculer vers Ganache
+          }, 2000);
+          
+          return false;
+        }
+        
+        // Si on est sur un réseau connu (Ganache), configurer le contrat
+        const contractInitialized = await this.tryInitializeContract(networkId);
+        
+        if (!contractInitialized) {
+          console.warn(`Le contrat n'a pas pu être initialisé pour le réseau ${networkId}`);
+          
+          // Tenter explicitement de détecter un contrat valide
+          const detectedAddress = await this.detectDeployedContract(networkId);
+          if (detectedAddress) {
+            console.log(`Contrat détecté à l'adresse: ${detectedAddress}`);
+            this.contractAddresses[networkId] = detectedAddress;
+            this.contractAddress = detectedAddress;
+            
+            // Réessayer l'initialisation avec la nouvelle adresse
+            const retryInitialized = await this.tryInitializeContract(networkId);
+            if (!retryInitialized) {
+              this.dispatchWeb3Event('contract-error');
+              return false;
+            }
           } else {
-            console.warn("Aucun compte disponible sur Ganache");
+            this.dispatchWeb3Event('contract-error');
             return false;
           }
-        } catch (error) {
-          console.error("Échec de connexion à Ganache:", error);
-          return false;
         }
+        
+        // Configurer les écouteurs d'événements
+        this.setupEventListeners();
+        
+        // Configurer les écouteurs d'événements du contrat
+        this.setupContractEventListeners();
+        
+        // Marquer comme initialisé
+        this.initialized = true;
+        console.log("Web3Service initialisé avec succès");
+        
+        // Déclencher l'événement connecté
+        this.dispatchWeb3Event('connected', {
+          account: this.account,
+          networkId: networkId
+        });
+        
+        return true;
+      } catch (connectionError) {
+        console.error("Erreur lors de la connexion à Web3:", connectionError);
+        this.dispatchWeb3Event('connection-error', { error: connectionError.message });
+        return false;
       }
-      
-      // Si on arrive ici, c'est que la connexion à Web3 est établie
-      this.initialized = true;
-      
-      // Essayer de configurer le contrat, maintenant qu'on a un ID de réseau
-      const contractInitialized = await this.tryInitializeContract();
-      console.log("Contrat initialisé:", contractInitialized);
-      
-      // Inscription automatique de l'utilisateur s'il n'est pas déjà inscrit
-      if (contractInitialized && this.account) {
-        try {
-          const isRegistered = await this.isUserRegistered();
-          if (!isRegistered) {
-            console.log("Utilisateur non inscrit, tentative d'inscription automatique...");
-            try {
-              // Inscription automatique en tant qu'étudiant (rôle 0) avec un nom générique
-              const userName = `Utilisateur-${this.shortenAddress(this.account)}`;
-              const userRole = 0; // 0 = Étudiant
-              
-              await this.registerUser(userName, userRole);
-              console.log("Inscription automatique réussie!");
-              
-              // Notifier l'utilisateur de l'inscription automatique
-              window.dispatchEvent(new CustomEvent('autoRegistrationSuccess', {
-                detail: {
-                  address: this.account,
-                  name: userName,
-                  role: userRole
-                }
-              }));
-            } catch (registerError) {
-              // Si l'erreur est que l'utilisateur existe déjà, ce n'est pas grave
-              if (registerError.code === "USER_EXISTS") {
-                console.log("L'utilisateur est déjà inscrit (pas besoin d'inscription automatique)");
-              } else {
-                console.error("Erreur lors de l'inscription automatique:", registerError);
-              }
-            }
-          } else {
-            console.log("L'utilisateur est déjà inscrit, pas besoin d'inscription automatique");
-          }
-        } catch (checkError) {
-          console.error("Erreur lors de la vérification d'inscription:", checkError);
-        }
-      }
-      
-      return true; // Retourner true même si le contrat n'est pas initialisé, car Web3 fonctionne
     } catch (error) {
-      console.error("Erreur d'initialisation Web3:", error);
+      console.error("Erreur lors de l'initialisation de Web3Service:", error);
+      this.dispatchWeb3Event('initialization-error', { error: error.message });
       return false;
     }
   }
   
   // Essayer d'initialiser le contrat, mais ne pas échouer si cela ne fonctionne pas
-  async tryInitializeContract() {
+  async tryInitializeContract(networkId) {
     try {
       // Vérifier si on a un ID de réseau
-      if (!this.networkId) {
+      if (!networkId) {
         console.warn("Pas d'ID de réseau disponible pour initialiser le contrat");
         // Utiliser un ID de réseau par défaut pour le développement
-        this.networkId = 1337; // Ganache/Localhost par défaut
-        console.log("Utilisation de l'ID de réseau par défaut:", this.networkId);
+        networkId = 1337; // Ganache/Localhost par défaut
+        console.log("Utilisation de l'ID de réseau par défaut:", networkId);
       }
       
       // Obtenir l'adresse du contrat pour ce réseau
-      let contractAddress = this.contractAddresses[this.networkId] || this.contractAddress;
+      let contractAddress = this.contractAddresses[networkId] || this.contractAddress;
       
       if (!contractAddress) {
-        console.warn(`Adresse du contrat non définie pour le réseau ${this.networkId}`);
+        console.warn(`Adresse du contrat non définie pour le réseau ${networkId}`);
         return false;
       }
       
-      this.contractAddress = contractAddress;
-      console.log("Tentative d'initialisation du contrat à l'adresse:", contractAddress);
+      console.log(`Tentative d'initialisation du contrat à l'adresse: ${contractAddress}`);
       
-      // Initialiser le contrat
-      this.contract = new this.web3.eth.Contract(
-        LibraryDAppABI,
-        contractAddress
-      );
-      
-      // Vérifier si le contrat est valide
+      // Vérifier d'abord que le contrat existe à cette adresse
       try {
         const code = await this.web3.eth.getCode(contractAddress);
         if (code === '0x' || code === '0x0') {
-          console.error("Aucun contrat déployé à cette adresse");
-          this.contract = null;
-          return false;
-        }
-        
-        console.log("Code du contrat trouvé à l'adresse spécifiée");
-        
-        // Essayer d'appeler une méthode simple du contrat pour vérifier
-        try {
-          if (this.contract.methods.bookCount) {
-            await this.contract.methods.bookCount().call();
-            console.log("Méthode bookCount appelée avec succès");
+          console.error(`Aucun contrat déployé à cette adresse: ${contractAddress}`);
+          
+          // Tenter de détecter automatiquement le contrat déployé
+          if (this.account) {
+            console.log("Tentative de détection automatique du contrat déployé...");
+            const detectedAddress = await this.detectDeployedContract(networkId);
             
-            // Configurer les écouteurs d'événements du contrat
-            this.setupContractEventListeners();
-            return true;
+            if (detectedAddress) {
+              console.log(`Contrat détecté à l'adresse: ${detectedAddress}`);
+              contractAddress = detectedAddress;
+              
+              // Mettre à jour l'adresse dans la configuration
+              this.contractAddresses[networkId] = detectedAddress;
+              this.contractAddress = detectedAddress;
+            } else {
+              console.error("Aucun contrat détecté automatiquement");
+              return false;
+            }
+          } else {
+            return false;
           }
-        } catch (methodError) {
-          console.warn("Erreur lors de l'appel à bookCount:", methodError);
-          // On continue quand même
         }
-      } catch (codeError) {
-        console.warn("Erreur lors de la vérification du code du contrat:", codeError);
+      } catch (error) {
+        console.error("Erreur lors de la vérification du code du contrat:", error);
+        return false;
       }
       
-      return false;
+      // Initialiser le contrat avec l'ABI et l'adresse
+      const LibraryContract = require('../LibraryDAppABI.json');
+      this.contract = new this.web3.eth.Contract(
+        LibraryContract,
+        contractAddress
+      );
+      
+      // Vérifier si le contrat a les méthodes attendues
+      if (!this.contract.methods) {
+        console.error("Le contrat n'a pas les méthodes attendues");
+        return false;
+      }
+      
+      // Vérifier si le contrat a la méthode 'admin' comme test basique
+      try {
+        const adminAddress = await this.contract.methods.admin().call();
+        console.log(`Contrat initialisé avec succès à l'adresse ${contractAddress}`);
+        console.log(`Administrateur du contrat: ${adminAddress}`);
+        return true;
+      } catch (methodError) {
+        console.error("Erreur lors de l'appel à la méthode admin:", methodError);
+        this.contract = null;
+        return false;
+      }
+      
     } catch (error) {
       console.error("Erreur lors de l'initialisation du contrat:", error);
       this.contract = null;
       return false;
+    }
+  }
+  
+  // Fonction pour détecter automatiquement l'adresse du contrat déployé
+  async detectDeployedContract(networkId) {
+    try {
+      console.log("Recherche du contrat déployé...");
+      
+      // Liste des adresses possibles à vérifier
+      const possibleAddresses = [
+        this.contractAddress,
+        ...Object.values(this.contractAddresses),
+        // Ajouter ici d'autres adresses potentielles
+      ];
+      
+      // Rechercher dans les transactions récentes du compte utilisateur
+      let recentTxs = [];
+      try {
+        // Limiter la recherche aux 100 dernières transactions pour des raisons de performance
+        const blockNumber = await this.web3.eth.getBlockNumber();
+        const startBlock = Math.max(0, blockNumber - 5000); // Rechercher dans les 5000 derniers blocs
+        
+        // Explorer les blocs récents pour trouver les transactions du compte utilisateur
+        if (this.account) {
+          for (let i = blockNumber; i >= startBlock; i -= 100) {
+            const block = await this.web3.eth.getBlock(i, true);
+            if (block && block.transactions) {
+              const userTxs = block.transactions.filter(
+                tx => tx.from === this.account || tx.to === this.account
+              );
+              recentTxs.push(...userTxs);
+              
+              if (recentTxs.length > 20) break; // Limiter le nombre de transactions analysées
+            }
+          }
+        }
+      } catch (txError) {
+        console.warn("Erreur lors de la recherche de transactions:", txError);
+      }
+      
+      // Ajouter les adresses des transactions à la liste des adresses possibles
+      const txAddresses = recentTxs
+        .filter(tx => tx.to)
+        .map(tx => tx.to.toLowerCase());
+      
+      possibleAddresses.push(...txAddresses);
+      
+      // Liste des adresses uniques à tester
+      const uniqueAddresses = [...new Set(possibleAddresses.filter(Boolean))];
+      console.log(`Vérification de ${uniqueAddresses.length} adresses potentielles`);
+      
+      // Vérifier chaque adresse pour voir si elle contient un contrat valide
+      const LibraryContract = require('../LibraryDAppABI.json');
+      
+      for (const address of uniqueAddresses) {
+        try {
+          // Vérifier si l'adresse contient du code
+          const code = await this.web3.eth.getCode(address);
+          if (code === '0x' || code === '0x0') continue;
+          
+          // Tester si le contrat à cette adresse a les méthodes attendues
+          const tempContract = new this.web3.eth.Contract(
+            LibraryContract,
+            address
+          );
+          
+          // Vérifier qu'on peut appeler la méthode admin() comme test basique
+          try {
+            await tempContract.methods.admin().call();
+            // Si on arrive ici, le contrat est valide
+            console.log(`Contrat valide détecté à l'adresse: ${address}`);
+            return address;
+          } catch (methodError) {
+            // Ce n'est pas notre contrat
+            continue;
+          }
+        } catch (error) {
+          // Erreur lors de la vérification, passer à l'adresse suivante
+          continue;
+        }
+      }
+      
+      console.log("Aucun contrat valide trouvé après vérification des adresses potentielles");
+      return null;
+    } catch (error) {
+      console.error("Erreur lors de la détection du contrat:", error);
+      return null;
     }
   }
   
@@ -569,222 +628,60 @@ class Web3Service {
     }
   }
 
-  async isUserRegistered() {
-    console.log("Vérification si l'utilisateur est inscrit:", this.account);
+  // Méthode pour dispatcher des événements Web3
+  dispatchWeb3Event(eventName, eventData = {}) {
+    console.log(`Dispatch de l'événement Web3: ${eventName}`, eventData);
     
-    if (!this.account) {
-      console.error("Aucun compte disponible pour vérifier l'inscription");
-      return false;
-    }
+    // Créer et dispatcher un CustomEvent
+    const event = new CustomEvent(`web3-${eventName}`, {
+      detail: {
+        ...eventData,
+        timestamp: Date.now()
+      }
+    });
+    
+    window.dispatchEvent(event);
+  }
 
-    // Solution de contournement temporaire : considérer tout utilisateur connecté comme inscrit
-    // pour éviter les erreurs lors de l'ajout de livres ou d'autres opérations
-    return true;
+  async isUserRegistered(address = null) {
+    try {
+      // Vérifier si nous sommes initialisés et connectés
+      if (!this.isInitialized() || !this.isConnected()) {
+        await this.initialize();
+      }
 
-    /* Méthode originale commentée pour référence
-    if (!this.initialized) {
-      console.log("Service non initialisé, tentative d'initialisation...");
-      const success = await this.initialize();
-      if (!success) {
-        console.error("Échec d'initialisation du service Web3 lors de la vérification de l'utilisateur");
+      // Utiliser l'adresse fournie ou l'adresse actuelle
+      const userAddress = address || this.account;
+      
+      if (!userAddress) {
+        console.error("Aucune adresse fournie ou compte non connecté");
         return false;
       }
-    }
-    
-    // Vérifier le cache d'abord
-    const lowerCaseAddress = this.account.toLowerCase();
-    if (this.userRegisteredCache.has(lowerCaseAddress)) {
-      console.log("Statut d'inscription trouvé dans le cache:", this.userRegisteredCache.get(lowerCaseAddress));
+
+      // Vérifier si le contrat est disponible
+      if (!this.contract) {
+        console.error("Contrat non disponible pour vérifier l'inscription");
+        return false;
+      }
+
+      // Appeler la fonction du smart contract pour vérifier si l'utilisateur est enregistré
+      const isRegistered = await this.callViewMethod('isUserRegistered', [userAddress]);
       
-      // Si le cache indique que l'utilisateur est inscrit, essayons de vérifier sur la blockchain
-      // pour s'assurer que ce n'est pas une fausse entrée dans le cache
-      if (this.userRegisteredCache.get(lowerCaseAddress) && this.contract) {
-        try {
-          // Essayer de vérifier sur la blockchain si le cache dit que l'utilisateur est inscrit
-          const blockchainCheck = await this.contract.methods.isUserRegistered(this.account).call();
-          if (!blockchainCheck) {
-            // Si l'utilisateur n'existe pas sur la blockchain mais que le cache dit qu'il existe,
-            // alors nous avons un problème de cache
-            console.log("L'utilisateur n'existe pas sur la blockchain, mais le cache dit qu'il existe. Nettoyage du cache...");
-            this.userRegisteredCache.set(lowerCaseAddress, false);
-            
-            // Nettoyer aussi le localStorage
-            try {
-              const storedUsers = localStorage.getItem('registeredUsers');
-              if (storedUsers) {
-                const users = JSON.parse(storedUsers);
-                const filteredUsers = users.filter(addr => addr !== lowerCaseAddress);
-                localStorage.setItem('registeredUsers', JSON.stringify(filteredUsers));
-              }
-              localStorage.removeItem(`user_${lowerCaseAddress}`);
-            } catch (storageError) {
-              console.warn("Erreur lors du nettoyage dans localStorage:", storageError);
-            }
-            
-            return false;
-          }
-        } catch (error) {
-          console.warn("Erreur lors de la vérification sur la blockchain:", error.message);
-          // Si la vérification échoue, gardons la valeur du cache
-        }
+      // Ajouter un event si l'utilisateur change de compte et n'est pas enregistré
+      if (address && address !== this.account && !isRegistered) {
+        window.dispatchEvent(new CustomEvent('metamaskAccountChanged', { 
+          detail: { 
+            account: address,
+            isRegistered: false
+          } 
+        }));
       }
       
-      return this.userRegisteredCache.get(lowerCaseAddress);
-    }
-    
-    // Vérifier dans localStorage
-    try {
-      // Vérifier si l'adresse est dans la liste des utilisateurs enregistrés
-      const storedUsers = localStorage.getItem('registeredUsers');
-      if (storedUsers) {
-        const users = JSON.parse(storedUsers);
-        if (users.includes(lowerCaseAddress)) {
-          console.log("Utilisateur trouvé dans localStorage");
-          
-          // Vérifier sur la blockchain si possible
-          if (this.contract) {
-            try {
-              const blockchainCheck = await this.contract.methods.isUserRegistered(this.account).call();
-              if (!blockchainCheck) {
-                // Si l'utilisateur n'existe pas sur la blockchain mais que localStorage dit qu'il existe,
-                // alors nous avons un problème de données locales
-                console.log("L'utilisateur n'existe pas sur la blockchain, mais localStorage dit qu'il existe. Nettoyage...");
-                
-                // Nettoyer localStorage
-                const filteredUsers = users.filter(addr => addr !== lowerCaseAddress);
-                localStorage.setItem('registeredUsers', JSON.stringify(filteredUsers));
-                localStorage.removeItem(`user_${lowerCaseAddress}`);
-                
-                return false;
-              }
-            } catch (error) {
-              console.warn("Erreur lors de la vérification sur la blockchain:", error.message);
-              // En cas d'erreur, on fait confiance à localStorage pour éviter de bloquer l'utilisateur
-            }
-          }
-          
-          this.userRegisteredCache.set(lowerCaseAddress, true);
-          
-          // Charger les données de l'utilisateur
-          const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
-          if (userData) {
-            const user = JSON.parse(userData);
-            console.log("Données utilisateur chargées depuis localStorage:", user);
-          }
-          
-          return true;
-        }
-      }
-    } catch (storageError) {
-      console.warn("Erreur lors de la vérification dans localStorage:", storageError);
-    }
-    
-    // Si pas de contrat initialisé, l'utilisateur n'est pas considéré comme inscrit
-    if (!this.contract) {
-      console.log("Pas de contrat valide disponible, l'utilisateur est considéré comme non inscrit");
-      this.userRegisteredCache.set(lowerCaseAddress, false);
-      return false;
-    }
-    
-    try {
-      console.log("Vérification si l'utilisateur est inscrit via plusieurs méthodes...");
-      let isRegistered = false;
-      
-      // Méthode 1: Essayer isUserRegistered (méthode la plus fiable)
-      try {
-        if (this.contract.methods.isUserRegistered) {
-          isRegistered = await this.contract.methods.isUserRegistered(this.account).call();
-          console.log("Résultat de isUserRegistered:", isRegistered);
-          if (isRegistered) {
-            this.userRegisteredCache.set(this.account.toLowerCase(), true);
-            
-            // Sauvegarder dans localStorage
-            try {
-              let registeredUsers = [];
-              const storedUsers = localStorage.getItem('registeredUsers');
-              if (storedUsers) {
-                registeredUsers = JSON.parse(storedUsers);
-              }
-              if (!registeredUsers.includes(this.account.toLowerCase())) {
-                registeredUsers.push(this.account.toLowerCase());
-                localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-              }
-            } catch (saveError) {
-              console.warn("Erreur lors de la sauvegarde dans localStorage:", saveError);
-            }
-            
-            return true;
-          }
-        }
-      } catch (error) {
-        console.warn("Méthode isUserRegistered non disponible ou erreur:", error.message);
-      }
-      
-      // Méthode 2: Essayer getUserReputation
-      try {
-        const reputation = await this.contract.methods.getUserReputation(this.account).call();
-        console.log("Réputation de l'utilisateur:", reputation);
-        if (parseInt(reputation) > 0) {
-          this.userRegisteredCache.set(this.account.toLowerCase(), true);
-          
-          // Sauvegarder dans localStorage
-          try {
-            let registeredUsers = [];
-            const storedUsers = localStorage.getItem('registeredUsers');
-            if (storedUsers) {
-              registeredUsers = JSON.parse(storedUsers);
-            }
-            if (!registeredUsers.includes(this.account.toLowerCase())) {
-              registeredUsers.push(this.account.toLowerCase());
-              localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-            }
-          } catch (saveError) {
-            console.warn("Erreur lors de la sauvegarde dans localStorage:", saveError);
-          }
-          
-          return true;
-        }
-      } catch (error) {
-        console.warn("Erreur lors de la récupération de la réputation:", error.message);
-      }
-      
-      // Méthode 3: Essayer getUserBorrowHistory
-      try {
-        const history = await this.contract.methods.getUserBorrowHistory(this.account).call();
-        if (Array.isArray(history) && history.length > 0) {
-          console.log("L'utilisateur a un historique d'emprunts:", history);
-          this.userRegisteredCache.set(this.account.toLowerCase(), true);
-          
-          // Sauvegarder dans localStorage
-          try {
-            let registeredUsers = [];
-            const storedUsers = localStorage.getItem('registeredUsers');
-            if (storedUsers) {
-              registeredUsers = JSON.parse(storedUsers);
-            }
-            if (!registeredUsers.includes(this.account.toLowerCase())) {
-              registeredUsers.push(this.account.toLowerCase());
-              localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-            }
-          } catch (saveError) {
-            console.warn("Erreur lors de la sauvegarde dans localStorage:", saveError);
-          }
-          
-          return true;
-        }
-      } catch (error) {
-        console.warn("Erreur lors de la récupération de l'historique:", error.message);
-      }
-      
-      // Si toutes les méthodes ont échoué, on considère que l'utilisateur n'est pas inscrit
-      console.log("L'utilisateur n'est pas inscrit (selon toutes les méthodes disponibles)");
-      this.userRegisteredCache.set(this.account.toLowerCase(), false);
-      return false;
+      return isRegistered;
     } catch (error) {
-      console.error("Erreur générale lors de la vérification de l'inscription:", error);
+      console.error("Erreur lors de la vérification de l'enregistrement:", error);
       return false;
     }
-    */
   }
 
   async registerUser(name, role) {
@@ -859,7 +756,7 @@ class Web3Service {
     // Si le contrat n'est pas disponible, essayer de l'initialiser
     if (!this.contract) {
       console.log("Tentative de récupération du contrat avant inscription...");
-      await this.tryInitializeContract();
+      await this.tryInitializeContract(this.networkId);
       
       // Si le contrat n'est toujours pas disponible, gérer le mode "hors ligne"
       if (!this.contract) {
@@ -1033,13 +930,77 @@ class Web3Service {
   }
 
   async getBook(bookId) {
-    if (!this.initialized) await this.initialize();
-    
     try {
-      return await this.contract.methods.books(bookId).call();
+      // S'assurer que bookId est un nombre
+      const id = Number(bookId);
+      if (isNaN(id) || id <= 0) {
+        console.error("ID de livre invalide:", bookId);
+        return null;
+      }
+      
+      // Appeler la méthode du contrat pour obtenir les informations du livre
+      const bookInfo = await this.callViewMethod('books', [id]);
+      
+      if (!bookInfo || !bookInfo.title) {
+        console.warn(`Livre non trouvé ou données invalides pour l'ID ${id}`);
+        return null;
+      }
+      
+      // Récupérer si le livre est actuellement emprunté
+      const isAvailable = await this.callViewMethod('isBookAvailable', [id]);
+      
+      // Récupérer les métadonnées supplémentaires depuis IPFS si disponible
+      let metadata = {};
+      
+      if (bookInfo.ipfsHash) {
+        try {
+          console.log(`Tentative de récupération des métadonnées IPFS pour le hash: ${bookInfo.ipfsHash}`);
+          // Récupérer les métadonnées depuis IPFS
+          const ipfsGatewayUrl = `https://ipfs.io/ipfs/${bookInfo.ipfsHash}`;
+          
+          // Vérifier si la ressource existe
+          const checkResponse = await fetch(ipfsGatewayUrl, { method: 'HEAD' });
+          
+          if (checkResponse.ok) {
+            const contentType = checkResponse.headers.get('content-type');
+            
+            if (contentType && contentType.includes('json')) {
+              // Si c'est un JSON, récupérer les métadonnées
+              const response = await fetch(ipfsGatewayUrl);
+              const data = await response.json();
+              
+              console.log("Métadonnées IPFS récupérées:", data);
+              
+              // Extraire les propriétés utiles
+              metadata = {
+                category: data.category || '',
+                isbn: data.isbn || '',
+                pageCount: data.pageCount ? parseInt(data.pageCount) : null,
+                publishedDate: data.publishedDate || '',
+                description: data.description || '',
+                coverImageHash: data.coverImageHash || '',
+                pdfHash: data.pdfHash || ''
+              };
+            }
+          }
+        } catch (ipfsError) {
+          console.warn(`Erreur lors de la récupération des métadonnées IPFS pour le livre ${id}:`, ipfsError);
+        }
+      }
+      
+      // Formater et retourner les informations du livre
+      return {
+        id: id,
+        title: bookInfo.title || '',
+        author: bookInfo.author || '',
+        ipfsHash: bookInfo.ipfsHash || '',
+        isAvailable: isAvailable,
+        // Intégrer les métadonnées supplémentaires si disponibles
+        ...metadata
+      };
     } catch (error) {
       console.error(`Erreur lors de la récupération du livre ${bookId}:`, error);
-      throw error;
+      return null;
     }
   }
 
@@ -1310,7 +1271,7 @@ class Web3Service {
       // Vérifier que le contrat est initialisé
       if (!this.contract || !this.contract.methods) {
         console.log("Réinitialisation du contrat...");
-        await this.tryInitializeContract();
+        await this.tryInitializeContract(this.networkId);
         
         // Si le contrat est toujours null après initialisation
         if (!this.contract || !this.contract.methods) {
@@ -1734,74 +1695,145 @@ class Web3Service {
   
   // Vérifier si l'utilisateur est l'administrateur
   async isAdmin() {
-    if (!this.initialized || !this.contract || !this.account) {
-      console.warn("Web3Service n'est pas correctement initialisé pour vérifier isAdmin");
+    console.log("Vérification des droits admin - État initial:", {
+      initialized: this.initialized,
+      hasAccount: !!this.account,
+      hasContract: !!this.contract,
+      networkId: this.networkId,
+      contractAddress: this.contractAddress
+    });
+
+    if (!this.initialized) {
+      try {
+        console.log("Web3Service non initialisé, tentative d'initialisation...");
+        // Tenter d'initialiser si ce n'est pas déjà fait
+        await this.initialize();
+      } catch (error) {
+        console.error("Échec de l'initialisation lors de la vérification des droits d'administrateur:", error);
+        return false;
+      }
+    }
+    
+    if (!this.account) {
+      console.warn("Aucun compte connecté pour vérifier les droits d'administrateur");
       return false;
     }
     
+    if (!this.contract || !this.contract.methods) {
+      try {
+        console.log("Contrat non initialisé, tentative d'initialisation...", this.networkId);
+        // Forcer la réinitialisation du contrat avec le réseau actuel
+        if (!this.networkId) {
+          try {
+            const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+            this.networkId = parseInt(chainId, 16);
+            console.log("Réseau actuel détecté:", this.networkId);
+          } catch (error) {
+            console.error("Impossible de détecter le réseau actuel:", error);
+          }
+        }
+        
+        // Utiliser l'adresse explicite du contrat si disponible
+        const contractAddress = this.contractAddresses[this.networkId] || this.contractAddress;
+        console.log("Adresse du contrat utilisée:", contractAddress, "pour le réseau:", this.networkId);
+        
+        // Initialiser le contrat avec l'ABI et l'adresse
+        if (this.web3 && contractAddress) {
+          // Utiliser l'ABI disponible dans src/LibraryDAppABI.json
+          const LibraryContractABI = require('../LibraryDAppABI.json');
+          this.contract = new this.web3.eth.Contract(
+            LibraryContractABI,
+            contractAddress
+          );
+          console.log("Contrat réinitialisé manuellement:", !!this.contract);
+        }
+        
+        if (!this.contract || !this.contract.methods) {
+          console.warn("Impossible d'initialiser le contrat pour vérifier les droits d'administrateur");
+          return false;
+        }
+      } catch (error) {
+        console.error("Échec de l'initialisation du contrat lors de la vérification des droits d'administrateur:", error);
+        return false;
+      }
+    }
+    
     try {
-      // Récupérer l'adresse de l'administrateur
+      console.log("Tentative d'appel de la méthode admin()...");
+      // Vérifier si la méthode admin existe
+      if (!this.contract.methods.admin) {
+        console.error("La méthode admin() n'existe pas dans le contrat");
+        return false;
+      }
+      
+      // Utiliser directement la méthode du contrat pour éviter des problèmes additionnels
       const adminAddress = await this.contract.methods.admin().call();
       
+      if (!adminAddress) {
+        console.warn("Impossible de récupérer l'adresse de l'administrateur");
+        return false;
+      }
+      
       // Comparer avec l'adresse de l'utilisateur (conversion en minuscules pour éviter les problèmes de casse)
-      return adminAddress.toLowerCase() === this.account.toLowerCase();
+      const isUserAdmin = adminAddress.toLowerCase() === this.account.toLowerCase();
+      console.log("Vérification admin:", { adminAddress, userAddress: this.account, isAdmin: isUserAdmin });
+      
+      return isUserAdmin;
     } catch (error) {
       console.error("Erreur lors de la vérification du statut d'administrateur:", error);
       return false;
     }
   }
 
+  // Obtenir tous les livres
   async getBooks() {
-    if (!this.initialized) await this.initialize();
-    
-    const books = [];
-    
     try {
-      // Essayer de récupérer les livres depuis la blockchain
-      if (this.contract && this.contract.methods.getTotalBooks) {
-        const totalBooks = await this.contract.methods.getTotalBooks().call();
-        console.log(`Total des livres dans la blockchain: ${totalBooks}`);
-        
-        for (let i = 0; i < totalBooks; i++) {
-          try {
-            const book = await this.contract.methods.getBookDetails(i).call();
-            books.push({
-              id: i,
-              title: book.title,
-              author: book.author,
-              description: book.description || "",
-              coverImage: book.coverImage || "",
-              price: this.web3.utils.fromWei(book.price || '0', 'ether'),
-              owner: book.owner,
-              available: book.available
-            });
-          } catch (error) {
-            console.error(`Erreur lors de la récupération du livre ${i}:`, error);
-          }
+      // Vérifier si le service est initialisé
+      if (!this.isInitialized()) {
+        console.log("Service non initialisé, tentative d'initialisation...");
+        await this.initialize();
+      }
+      
+      // Vérifier si le contrat est disponible
+      if (!this.contract) {
+        console.error("Contrat non disponible pour récupérer les livres");
+        return [];
+      }
+      
+      // Récupérer le nombre total de livres avec la propriété 'bookCount' 
+      // au lieu de la méthode 'getBookCount' qui n'existe pas
+      const bookCount = await this.callViewMethod('bookCount', []);
+      console.log(`Nombre total de livres: ${bookCount}`);
+      
+      if (bookCount <= 0) {
+        return [];
+      }
+      
+      // Récupérer les informations de tous les livres
+      const books = [];
+      const promises = [];
+      
+      for (let i = 1; i <= bookCount; i++) {
+        promises.push(this.getBook(i));
+      }
+      
+      // Attendre que toutes les requêtes soient terminées
+      const results = await Promise.all(promises);
+      
+      // Filtrer les résultats null ou undefined
+      for (const book of results) {
+        if (book) {
+          books.push(book);
         }
-      } else {
-        console.log("La méthode getTotalBooks n'existe pas dans le contrat");
       }
+      
+      console.log(`${books.length} livres récupérés avec succès`);
+      
+      return books;
     } catch (error) {
-      console.error("Erreur lors de la récupération des livres depuis la blockchain:", error);
+      console.error("Erreur lors de la récupération des livres:", error);
+      return [];
     }
-    
-    // Ajouter les livres stockés localement
-    try {
-      const localBooksJSON = localStorage.getItem('localBooks');
-      if (localBooksJSON) {
-        const localBooks = JSON.parse(localBooksJSON);
-        console.log(`Livres stockés localement: ${localBooks.length}`);
-        
-        // Ajouter les livres locaux à la liste
-        books.push(...localBooks);
-      }
-    } catch (error) {
-      console.error("Erreur lors de la récupération des livres locaux:", error);
-    }
-    
-    console.log(`Total des livres récupérés: ${books.length}`);
-    return books;
   }
 
   // Simuler l'achat d'un livre local
@@ -1914,7 +1946,7 @@ class Web3Service {
         value: price
       });
       
-      console.log("Achat du livre réussi:", result);
+      console.log("Achat du livre réussie:", result);
       
       return {
         success: true,
@@ -1924,6 +1956,88 @@ class Web3Service {
     } catch (error) {
       console.error("Erreur lors de l'achat du livre:", error);
       throw error;
+    }
+  }
+
+  // Récupérer un livre avec toutes ses métadonnées (blockchain + IPFS)
+  async getLivre(bookId) {
+    try {
+      // Récupérer les informations de base du livre depuis la blockchain
+      const bookFromBlockchain = await this.getBook(bookId);
+      
+      if (!bookFromBlockchain) {
+        console.error(`Livre avec ID ${bookId} non trouvé sur la blockchain`);
+        return null;
+      }
+      
+      // Si pas de hash IPFS, retourner seulement les données de la blockchain
+      if (!bookFromBlockchain.ipfsHash) {
+        console.warn(`Le livre avec ID ${bookId} n'a pas de données IPFS associées`);
+        return bookFromBlockchain;
+      }
+      
+      // Récupérer les métadonnées complètes depuis IPFS
+      console.log(`Récupération des métadonnées IPFS pour le livre ${bookId}: ${bookFromBlockchain.ipfsHash}`);
+      const ipfsMetadata = await ipfsService.getBookMetadata(bookFromBlockchain.ipfsHash);
+      
+      if (!ipfsMetadata) {
+        console.warn(`Impossible de récupérer les métadonnées IPFS pour le livre ${bookId}`);
+        return bookFromBlockchain;
+      }
+      
+      // Fusionner les données de la blockchain avec les métadonnées IPFS
+      const completeBook = {
+        ...bookFromBlockchain,
+        // Ajouter les champs des métadonnées IPFS
+        category: ipfsMetadata.category || bookFromBlockchain.category,
+        description: ipfsMetadata.description || '',
+        isbn: ipfsMetadata.isbn || '',
+        pageCount: ipfsMetadata.pageCount || bookFromBlockchain.pageCount,
+        publishedDate: ipfsMetadata.publishedDate || '',
+        price: ipfsMetadata.price || '0',
+        // URLs d'images et de PDF
+        coverImageUrl: ipfsMetadata.coverImageUrl || null,
+        coverImageHash: ipfsMetadata.coverImageHash || null,
+        pdfUrl: ipfsMetadata.pdfUrl || null,
+        pdfHash: ipfsMetadata.pdfHash || null
+      };
+      
+      console.log(`Livre complet récupéré pour ID ${bookId}:`, completeBook);
+      return completeBook;
+    } catch (error) {
+      console.error(`Erreur lors de la récupération complète du livre ${bookId}:`, error);
+      return null;
+    }
+  }
+  
+  // Récupérer tous les livres avec leurs métadonnées IPFS
+  async getAllLivres() {
+    try {
+      // Récupérer d'abord la liste de base des livres
+      const basicBooks = await this.getBooks();
+      
+      if (!basicBooks || basicBooks.length === 0) {
+        console.log("Aucun livre trouvé dans la blockchain");
+        return [];
+      }
+      
+      console.log(`Récupération des métadonnées complètes pour ${basicBooks.length} livres...`);
+      
+      // Pour chaque livre, récupérer les métadonnées complètes
+      const completeBooks = await Promise.all(
+        basicBooks.map(async (basicBook) => {
+          return await this.getLivre(basicBook.id);
+        })
+      );
+      
+      // Filtrer les livres nuls (en cas d'erreur)
+      const validBooks = completeBooks.filter(book => book !== null);
+      
+      console.log(`${validBooks.length} livres complets récupérés avec succès`);
+      return validBooks;
+    } catch (error) {
+      console.error("Erreur lors de la récupération de tous les livres:", error);
+      return [];
     }
   }
 }

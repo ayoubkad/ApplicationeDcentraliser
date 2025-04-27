@@ -140,12 +140,26 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
       setErrors({});
       showNotification("Les données utilisateur ont été nettoyées avec succès", "success");
     };
+
+    // Gestion du changement de compte non inscrit
+    const handleUnregisteredAccountChange = async (event) => {
+      const { account, isRegistered } = event.detail;
+      
+      if (account && !isRegistered) {
+        setEthereumAddress(account);
+        setCurrentStep('form');
+        
+        // Demander à l'utilisateur s'il souhaite s'inscrire avec ce nouveau compte
+        showNotification("Nouveau compte MetaMask détecté. Veuillez compléter l'inscription.", "info");
+      }
+    };
     
     // Ajouter les écouteurs
     window.addEventListener('metamaskAccountChanged', handleAccountChanged);
     window.addEventListener('metamaskNetworkChanged', handleNetworkChanged);
     window.addEventListener('metamaskDisconnected', handleDisconnect);
     window.addEventListener('userDataCleared', handleUserDataCleared);
+    window.addEventListener('metamaskAccountChanged', handleUnregisteredAccountChange);
     
     // Vérifier si on est redirigé depuis une tentative d'emprunt (via événement personnalisé)
     const checkBorrowRedirect = (event) => {
@@ -160,6 +174,7 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
       window.removeEventListener('metamaskDisconnected', handleDisconnect);
       window.removeEventListener('borrowRedirect', checkBorrowRedirect);
       window.removeEventListener('userDataCleared', handleUserDataCleared);
+      window.removeEventListener('metamaskAccountChanged', handleUnregisteredAccountChange);
     };
   }, [showNotification, currentStep, isConnected, account]);
   

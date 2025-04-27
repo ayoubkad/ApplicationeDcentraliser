@@ -189,6 +189,96 @@ class IPFSService {
   getIPFSGatewayURL(ipfsHash) {
     return ipfsHash ? `${this.currentConfig.gateway}/ipfs/${ipfsHash}` : '';
   }
+
+  // Récupérer les métadonnées d'un livre stocké sur IPFS
+  async getBookMetadata(ipfsHash) {
+    if (!ipfsHash) {
+      console.error("Hash IPFS manquant pour récupérer les métadonnées du livre");
+      return null;
+    }
+
+    this.log(`Récupération des métadonnées du livre depuis IPFS: ${ipfsHash}`);
+    
+    try {
+      // Plusieurs passerelles IPFS pour assurer la disponibilité
+      const ipfsGateways = [
+        `https://ipfs.io/ipfs/${ipfsHash}`,
+        `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+        `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
+        `https://dweb.link/ipfs/${ipfsHash}`
+      ];
+      
+      // Essayer chaque passerelle jusqu'à ce qu'une fonctionne
+      let metadata = null;
+      let responseError = null;
+      
+      for (const gateway of ipfsGateways) {
+        try {
+          const response = await fetch(gateway);
+          
+          if (response.ok) {
+            const contentType = response.headers.get('content-type');
+            
+            // Vérifier si c'est un JSON
+            if (contentType && contentType.includes('json')) {
+              const data = await response.json();
+              this.log(`Métadonnées récupérées avec succès depuis ${gateway}`);
+              
+              // Enrichir les métadonnées avec les URLs complètes
+              if (data.coverImageHash) {
+                data.coverImageUrl = `https://ipfs.io/ipfs/${data.coverImageHash}`;
+              }
+              
+              if (data.pdfHash) {
+                data.pdfUrl = `https://ipfs.io/ipfs/${data.pdfHash}`;
+              }
+              
+              metadata = data;
+              break;
+            } else {
+              responseError = new Error(`Le contenu n'est pas au format JSON: ${contentType}`);
+            }
+          } else {
+            responseError = new Error(`Échec de récupération (${response.status}): ${gateway}`);
+          }
+        } catch (error) {
+          responseError = error;
+          this.log(`Erreur avec la passerelle ${gateway}: ${error.message}`, 'warn');
+        }
+      }
+      
+      if (metadata) {
+        return metadata;
+      } else {
+        throw responseError || new Error("Toutes les passerelles IPFS ont échoué");
+      }
+    } catch (error) {
+      this.log(`Échec de récupération des métadonnées: ${error.message}`, 'error');
+      return null;
+    }
+  }
+  
+  // Récupérer l'URL d'une image stockée sur IPFS
+  async getIPFSImageUrl(ipfsHash) {
+    if (!ipfsHash) return null;
+    
+    try {
+      // Vérifier si l'image existe sur IPFS
+      const response = await fetch(`https://ipfs.io/ipfs/${ipfsHash}`, { method: 'HEAD' });
+      
+      if (response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('image')) {
+          return `https://ipfs.io/ipfs/${ipfsHash}`;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.log(`Erreur lors de la vérification de l'image IPFS: ${error.message}`, 'warn');
+      return null;
+    }
+  }
 }
 
 const ipfsService = new IPFSService();
