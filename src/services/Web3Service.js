@@ -17,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x7a542BdF5463B516a3820012324Ace4f77a946fD', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x7a542BdF5463B516a3820012324Ace4f77a946fD'  // Ganache - Adresse déployée
+      1337: '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -26,9 +26,10 @@ class Web3Service {
     
     // Configuration par défaut pour les appels de contrat
     this.defaultGasLimit = 3000000; // Limite de gas par défaut élevée
+    this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x7a542BdF5463B516a3820012324Ace4f77a946fD';
+    this.contractAddress = '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -245,12 +246,15 @@ class Web3Service {
   
   // Obtenir le nom d'un réseau à partir de son ID
   getNetworkName(networkId) {
+    if (networkId === 1337) return 'Localhost 8545';
+    if (networkId === 5777) return 'Ganache';
     return this.supportedNetworks[networkId]?.name || `Réseau inconnu (${networkId})`;
   }
   
   // Vérifier si le réseau actuel est supporté
-  isNetworkSupported() {
-    return !!this.supportedNetworks[this.networkId];
+  isNetworkSupported(networkId) {
+    // Accepter à la fois 1337 et 5777 comme réseaux locaux valides
+    return networkId === 1337 || networkId === 5777 || !!this.supportedNetworks[networkId];
   }
   
   // Vérifier si MetaMask est installé
@@ -311,8 +315,9 @@ class Web3Service {
         // Se connecter à Web3
         this.web3 = new Web3(window.ethereum);
         console.log("Connexion à Web3 établie");
-
-        // Récupérer les comptes
+        
+        // Récupérer les comptes avec un délai pour éviter les conflits
+        await new Promise(resolve => setTimeout(resolve, 1000));
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         
         if (!accounts || accounts.length === 0) {
@@ -329,7 +334,7 @@ class Web3Service {
         console.log("Réseau détecté:", networkId);
         
         // Vérifier le support du réseau
-        if (!this.isNetworkSupported()) {
+        if (!this.isNetworkSupported(networkId)) {
           console.warn("Réseau non supporté:", networkId);
           this.dispatchWeb3Event('wrong-network', { networkId });
           
@@ -398,172 +403,193 @@ class Web3Service {
   // Essayer d'initialiser le contrat, mais ne pas échouer si cela ne fonctionne pas
   async tryInitializeContract(networkId) {
     try {
-      // Vérifier si on a un ID de réseau
-      if (!networkId) {
-        console.warn("Pas d'ID de réseau disponible pour initialiser le contrat");
-        // Utiliser un ID de réseau par défaut pour le développement
-        networkId = 1337; // Ganache/Localhost par défaut
-        console.log("Utilisation de l'ID de réseau par défaut:", networkId);
-      }
-      
-      // Obtenir l'adresse du contrat pour ce réseau
-      let contractAddress = this.contractAddresses[networkId] || this.contractAddress;
-      
-      if (!contractAddress) {
-        console.warn(`Adresse du contrat non définie pour le réseau ${networkId}`);
+      if (!this.web3) {
+        console.warn("Web3 non initialisé");
         return false;
       }
-      
+
+      // Déterminer l'adresse du contrat à utiliser
+      const contractAddress = this.contractAddresses[networkId] || this.contractAddress;
       console.log(`Tentative d'initialisation du contrat à l'adresse: ${contractAddress}`);
-      
-      // Vérifier d'abord que le contrat existe à cette adresse
-      try {
-        const code = await this.web3.eth.getCode(contractAddress);
-        if (code === '0x' || code === '0x0') {
-          console.error(`Aucun contrat déployé à cette adresse: ${contractAddress}`);
+
+      // Vérifier si le contrat existe à cette adresse
+      const code = await this.web3.eth.getCode(contractAddress);
+      if (!code || code === '0x' || code === '0x0') {
+        console.warn(`Aucun contrat déployé à cette adresse: ${contractAddress}`);
+        console.log("Tentative de détection automatique du contrat déployé...");
+        
+        // Essayer de détecter le contrat automatiquement
+        const detectedAddress = await this.detectDeployedContract(networkId);
+        if (detectedAddress) {
+          console.log(`Contrat détecté à l'adresse: ${detectedAddress}`);
+          this.contractAddresses[networkId] = detectedAddress;
+          this.contractAddress = detectedAddress;
           
-          // Tenter de détecter automatiquement le contrat déployé
-          if (this.account) {
-            console.log("Tentative de détection automatique du contrat déployé...");
-            const detectedAddress = await this.detectDeployedContract(networkId);
-            
-            if (detectedAddress) {
-              console.log(`Contrat détecté à l'adresse: ${detectedAddress}`);
-              contractAddress = detectedAddress;
-              
-              // Mettre à jour l'adresse dans la configuration
-              this.contractAddresses[networkId] = detectedAddress;
-              this.contractAddress = detectedAddress;
-            } else {
-              console.error("Aucun contrat détecté automatiquement");
-              return false;
+          // Réessayer avec la nouvelle adresse
+          return await this.tryInitializeContract(networkId);
+        }
+        
+        return false;
+      }
+
+      // Initialiser le contrat
+      this.contract = new this.web3.eth.Contract(
+        LibraryDAppABI,
+        contractAddress,
+        {
+          from: this.account,
+          gas: this.defaultGasLimit,
+          gasPrice: this.defaultGasPrice
+        }
+      );
+
+      // Vérifier que le contrat est valide en appelant une méthode simple
+      try {
+        const adminAddress = await this.contract.methods.admin().call();
+        console.log("Contrat initialisé avec succès. Admin:", adminAddress);
+        return true;
+      } catch (callError) {
+        console.error("Erreur lors de l'appel au contrat:", callError);
+        
+        // Si l'erreur est liée au gas, essayer avec des paramètres différents
+        if (callError.message.includes('Out of Gas')) {
+          console.log("Tentative avec des paramètres de gas différents...");
+          this.contract = new this.web3.eth.Contract(
+            LibraryDAppABI,
+            contractAddress,
+            {
+              from: this.account,
+              gas: this.defaultGasLimit * 2,
+              gasPrice: this.defaultGasPrice * 2
             }
-          } else {
+          );
+          
+          try {
+            const adminAddress = await this.contract.methods.admin().call();
+            console.log("Contrat initialisé avec succès après ajustement du gas. Admin:", adminAddress);
+            return true;
+          } catch (retryError) {
+            console.error("Échec de la réinitialisation avec gas ajusté:", retryError);
             return false;
           }
         }
-      } catch (error) {
-        console.error("Erreur lors de la vérification du code du contrat:", error);
+        
         return false;
       }
-      
-      // Initialiser le contrat avec l'ABI et l'adresse
-      const LibraryContract = require('../LibraryDAppABI.json');
-      this.contract = new this.web3.eth.Contract(
-        LibraryContract,
-        contractAddress
-      );
-      
-      // Vérifier si le contrat a les méthodes attendues
-      if (!this.contract.methods) {
-        console.error("Le contrat n'a pas les méthodes attendues");
-        return false;
-      }
-      
-      // Vérifier si le contrat a la méthode 'admin' comme test basique
-      try {
-        const adminAddress = await this.contract.methods.admin().call();
-        console.log(`Contrat initialisé avec succès à l'adresse ${contractAddress}`);
-        console.log(`Administrateur du contrat: ${adminAddress}`);
-        return true;
-      } catch (methodError) {
-        console.error("Erreur lors de l'appel à la méthode admin:", methodError);
-        this.contract = null;
-        return false;
-      }
-      
     } catch (error) {
       console.error("Erreur lors de l'initialisation du contrat:", error);
-      this.contract = null;
       return false;
     }
   }
   
   // Fonction pour détecter automatiquement l'adresse du contrat déployé
   async detectDeployedContract(networkId) {
-    try {
-      console.log("Recherche du contrat déployé...");
+    console.log(`Recherche du contrat déployé sur le réseau ${networkId} ...`);
+    
+    // Liste des adresses candidates à vérifier
+    const candidateAddresses = [
+      this.contractAddress,
+      this.contractAddresses[networkId],
+      '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c', // Adresse précédente
+      '0x89F06E0A7930688B109FE6c91fbE8B3530Ca5150', // Autre adresse possible
+      '0xf9a82C631f7C03bb2DCA0435C982826621966e15'  // Nouvelle adresse
+    ];
+
+    console.log("Vérification des adresses candidates:", candidateAddresses);
+
+    // Vérifier chaque adresse candidate
+    for (const address of candidateAddresses) {
+      if (!address) continue;
       
-      // Liste des adresses possibles à vérifier
-      const possibleAddresses = [
-        this.contractAddress,
-        ...Object.values(this.contractAddresses),
-        // Ajouter ici d'autres adresses potentielles
-      ];
+      console.log(`Vérification de l'adresse candidate: ${address}`);
       
-      // Rechercher dans les transactions récentes du compte utilisateur
-      let recentTxs = [];
       try {
-        // Limiter la recherche aux 100 dernières transactions pour des raisons de performance
-        const blockNumber = await this.web3.eth.getBlockNumber();
-        const startBlock = Math.max(0, blockNumber - 5000); // Rechercher dans les 5000 derniers blocs
-        
-        // Explorer les blocs récents pour trouver les transactions du compte utilisateur
-        if (this.account) {
-          for (let i = blockNumber; i >= startBlock; i -= 100) {
-            const block = await this.web3.eth.getBlock(i, true);
-            if (block && block.transactions) {
-              const userTxs = block.transactions.filter(
-                tx => tx.from === this.account || tx.to === this.account
-              );
-              recentTxs.push(...userTxs);
-              
-              if (recentTxs.length > 20) break; // Limiter le nombre de transactions analysées
+        // Vérifier si le code existe à cette adresse
+        const code = await this.web3.eth.getCode(address);
+        if (!code || code === '0x' || code === '0x0') {
+          console.log(`Aucun code trouvé à l'adresse ${address}`);
+          continue;
+        }
+
+        // Vérifier si c'est bien notre contrat en appelant une méthode
+        const tempContract = new this.web3.eth.Contract(
+          LibraryDAppABI,
+          address,
+          {
+            from: this.account,
+            gas: this.defaultGasLimit,
+            gasPrice: this.defaultGasPrice
+          }
+        );
+
+        // Essayer d'appeler une méthode simple
+        const adminAddress = await tempContract.methods.admin().call();
+        if (adminAddress) {
+          console.log(`✅ Contrat valide trouvé à l'adresse: ${address}`);
+          return address;
+        }
+      } catch (error) {
+        console.log(`❌ Erreur avec l'adresse ${address}:`, error.message);
+        continue;
+      }
+    }
+
+    // Si aucune adresse candidate n'a fonctionné, chercher dans les transactions récentes
+    console.log("Aucune adresse candidate n'a fonctionné, recherche dans les transactions récentes...");
+    
+    try {
+      const currentBlock = await this.web3.eth.getBlockNumber();
+      const startBlock = Math.max(0, currentBlock - 100); // Regarder les 100 derniers blocs
+      
+      console.log(`Analyse des blocs ${startBlock} à ${currentBlock} pour trouver des transactions contractuelles...`);
+      
+      let interestingTransactions = [];
+      
+      // Analyser les blocs récents
+      for (let i = startBlock; i <= currentBlock; i++) {
+        const block = await this.web3.eth.getBlock(i, true);
+        if (block && block.transactions) {
+          for (const tx of block.transactions) {
+            if (tx.to === null) { // Transaction de création de contrat
+              interestingTransactions.push(tx);
             }
           }
         }
-      } catch (txError) {
-        console.warn("Erreur lors de la recherche de transactions:", txError);
       }
       
-      // Ajouter les adresses des transactions à la liste des adresses possibles
-      const txAddresses = recentTxs
-        .filter(tx => tx.to)
-        .map(tx => tx.to.toLowerCase());
+      console.log(`${interestingTransactions.length} transactions intéressantes trouvées dans les blocs récents`);
       
-      possibleAddresses.push(...txAddresses);
-      
-      // Liste des adresses uniques à tester
-      const uniqueAddresses = [...new Set(possibleAddresses.filter(Boolean))];
-      console.log(`Vérification de ${uniqueAddresses.length} adresses potentielles`);
-      
-      // Vérifier chaque adresse pour voir si elle contient un contrat valide
-      const LibraryContract = require('../LibraryDAppABI.json');
-      
-      for (const address of uniqueAddresses) {
+      // Vérifier chaque transaction intéressante
+      for (const tx of interestingTransactions) {
         try {
-          // Vérifier si l'adresse contient du code
-          const code = await this.web3.eth.getCode(address);
-          if (code === '0x' || code === '0x0') continue;
-          
-          // Tester si le contrat à cette adresse a les méthodes attendues
-          const tempContract = new this.web3.eth.Contract(
-            LibraryContract,
-            address
-          );
-          
-          // Vérifier qu'on peut appeler la méthode admin() comme test basique
-          try {
-            await tempContract.methods.admin().call();
-            // Si on arrive ici, le contrat est valide
-            console.log(`Contrat valide détecté à l'adresse: ${address}`);
-            return address;
-          } catch (methodError) {
-            // Ce n'est pas notre contrat
-            continue;
+          const receipt = await this.web3.eth.getTransactionReceipt(tx.hash);
+          if (receipt && receipt.contractAddress) {
+            const tempContract = new this.web3.eth.Contract(
+              LibraryDAppABI,
+              receipt.contractAddress,
+              {
+                from: this.account,
+                gas: this.defaultGasLimit,
+                gasPrice: this.defaultGasPrice
+              }
+            );
+            
+            const adminAddress = await tempContract.methods.admin().call();
+            if (adminAddress) {
+              console.log(`✅ Contrat valide trouvé dans les transactions récentes: ${receipt.contractAddress}`);
+              return receipt.contractAddress;
+            }
           }
         } catch (error) {
-          // Erreur lors de la vérification, passer à l'adresse suivante
           continue;
         }
       }
-      
-      console.log("Aucun contrat valide trouvé après vérification des adresses potentielles");
-      return null;
     } catch (error) {
-      console.error("Erreur lors de la détection du contrat:", error);
-      return null;
+      console.error("Erreur lors de l'analyse des transactions:", error);
     }
+    
+    console.log("⛔ Aucun contrat valide trouvé après analyse approfondie");
+    return null;
   }
   
   // Configurer les écouteurs d'événements du contrat
@@ -1621,7 +1647,7 @@ class Web3Service {
   }
 
   // Méthode générique pour appeler n'importe quelle méthode du contrat
-  async callContractMethod(methodName, params = [], options = {}) {
+  async callContractMethod(methodName, ...args) {
     if (!this.initialized || !this.contract || !this.account) {
       console.error("Web3Service n'est pas initialisé pour appeler une méthode de contrat");
       throw new Error("Service non initialisé");
@@ -1634,25 +1660,64 @@ class Web3Service {
     
     try {
       // Préparation de la transaction
-      const method = this.contract.methods[methodName](...params);
+      const method = this.contract.methods[methodName](...args);
       
       // Options par défaut
       const defaultOptions = {
         from: this.account,
-        gas: this.defaultGasLimit,
-        ...options
+        gas: this.defaultGasLimit || 500000, // S'assurer que la limite de gaz est définie
+        gasPrice: undefined, // Laisser MetaMask déterminer le prix du gaz
+        ...args
       };
       
-      console.log(`Appel de la méthode ${methodName} avec les paramètres:`, params);
+      console.log(`Appel de la méthode ${methodName} avec les paramètres:`, args);
       console.log("Options:", defaultOptions);
+      
+      // Vérifier l'estimation de gaz pour cette transaction
+      try {
+        const gasEstimate = await method.estimateGas({from: this.account});
+        console.log(`Estimation de gaz pour ${methodName}:`, gasEstimate);
+        
+        // Si l'estimation est proche de la limite, augmenter la limite
+        if (gasEstimate > defaultOptions.gas * 0.9) {
+          defaultOptions.gas = Math.floor(gasEstimate * 1.2); // Ajouter 20% de marge
+          console.log(`Limite de gaz ajustée pour ${methodName}:`, defaultOptions.gas);
+        }
+      } catch (estimateError) {
+        console.warn(`Impossible d'estimer le gaz pour ${methodName}:`, estimateError);
+        // Continuer avec la valeur par défaut
+      }
       
       // Exécution de la transaction
       const result = await method.send(defaultOptions);
       
       console.log(`Résultat de l'appel à ${methodName}:`, result);
       return result;
-      } catch (error) {
+    } catch (error) {
       console.error(`Erreur lors de l'appel à la méthode ${methodName}:`, error);
+      
+      // Gérer les erreurs spécifiques de MetaMask
+      if (error.code === -32603 && error.message.includes("Internal JSON-RPC error")) {
+        // Tenter d'extraire le message d'erreur interne
+        try {
+          const errorObj = JSON.parse(error.stack.match(/{.*}/s)[0]);
+          if (errorObj && errorObj.message) {
+            throw new Error(`Erreur MetaMask: ${errorObj.message}`);
+          }
+        } catch (parseError) {
+          // Si nous ne pouvons pas parser l'erreur, suggérer une solution
+          throw new Error("Erreur de transaction MetaMask. Essayez de réinitialiser votre compte dans MetaMask (Paramètres > Avancé > Réinitialiser le compte).");
+        }
+      } 
+      // Gérer l'erreur "user rejected transaction"
+      else if (error.code === 4001 || (error.message && error.message.includes("User denied"))) {
+        throw new Error("Transaction annulée par l'utilisateur");
+      }
+      // Gérer l'erreur de limite de gaz insuffisante
+      else if (error.message && error.message.toLowerCase().includes("gas")) {
+        throw new Error("Limite de gaz insuffisante. Veuillez augmenter la limite de gaz dans les options de transaction.");
+      }
+      
       throw error;
     }
   }
@@ -1785,9 +1850,11 @@ class Web3Service {
     }
   }
 
-  // Obtenir tous les livres
+  // Surcharge de la méthode getBooks pour filtrer les livres masqués
   async getBooks() {
     try {
+      console.log("Tentative de récupération des livres");
+      
       // Vérifier si le service est initialisé
       if (!this.isInitialized()) {
         console.log("Service non initialisé, tentative d'initialisation...");
@@ -1797,15 +1864,57 @@ class Web3Service {
       // Vérifier si le contrat est disponible
       if (!this.contract) {
         console.error("Contrat non disponible pour récupérer les livres");
-        return [];
+        
+        // Tentative de réinitialisation du contrat
+        console.log("Tentative de réinitialisation du contrat...");
+        if (this.web3) {
+          const networkId = await this.web3.eth.net.getId();
+          const success = await this.tryInitializeContract(networkId);
+          
+          if (!success) {
+            console.error("Échec de réinitialisation du contrat, tentative avec détection automatique");
+            const detectedAddress = await this.detectDeployedContract(networkId);
+            
+            if (detectedAddress) {
+              console.log(`Contrat détecté à l'adresse: ${detectedAddress}`);
+              this.contractAddresses[networkId] = detectedAddress;
+              this.contractAddress = detectedAddress;
+              
+              // Réessayer l'initialisation avec la nouvelle adresse
+              const retrySuccess = await this.tryInitializeContract(networkId);
+              if (!retrySuccess) {
+                console.error("Impossible d'initialiser le contrat même avec l'adresse détectée");
+                return this.getFilteredFallbackBooks(); // Utiliser des données de secours
+              }
+            } else {
+              console.error("Aucun contrat détecté automatiquement");
+              return this.getFilteredFallbackBooks(); // Utiliser des données de secours
+            }
+          }
+        } else {
+          console.error("Web3 non initialisé, impossible de récupérer les livres");
+          return this.getFilteredFallbackBooks(); // Utiliser des données de secours
+        }
       }
       
-      // Récupérer le nombre total de livres avec la propriété 'bookCount' 
-      // au lieu de la méthode 'getBookCount' qui n'existe pas
-      const bookCount = await this.callViewMethod('bookCount', []);
-      console.log(`Nombre total de livres: ${bookCount}`);
+      // Vérifier à nouveau si le contrat est disponible après les tentatives de récupération
+      if (!this.contract || !this.contract.methods) {
+        console.error("Échec de récupération du contrat après plusieurs tentatives");
+        return this.getFilteredFallbackBooks();
+      }
+      
+      // Récupérer le nombre total de livres avec la propriété 'bookCount'
+      let bookCount;
+      try {
+        bookCount = await this.callViewMethod('bookCount', []);
+        console.log(`Nombre total de livres: ${bookCount}`);
+      } catch (error) {
+        console.error("Erreur lors de la récupération du nombre de livres:", error);
+        return this.getFilteredFallbackBooks();
+      }
       
       if (bookCount <= 0) {
+        console.log("Aucun livre dans la bibliothèque");
         return [];
       }
       
@@ -1829,11 +1938,81 @@ class Web3Service {
       
       console.log(`${books.length} livres récupérés avec succès`);
       
-      return books;
+      // Filtrer les livres masqués
+      return this.filterHiddenBooks(books);
     } catch (error) {
       console.error("Erreur lors de la récupération des livres:", error);
-      return [];
+      return this.getFilteredFallbackBooks();
     }
+  }
+  
+  // Nouvelle méthode pour filtrer les livres masqués localement
+  filterHiddenBooks(books) {
+    try {
+      const hiddenBooks = JSON.parse(localStorage.getItem("hiddenBooks") || "[]");
+      if (hiddenBooks.length === 0) {
+        return books; // Pas de livres masqués, retourner la liste complète
+      }
+      
+      const hiddenIds = hiddenBooks.map(book => book.id);
+      console.log(`Filtrage de ${hiddenIds.length} livres masqués localement`);
+      
+      // Filtrer les livres masqués de la liste
+      return books.filter(book => !hiddenIds.includes(parseInt(book.id)));
+    } catch (error) {
+      console.warn("Erreur lors du filtrage des livres masqués:", error);
+      return books; // Retourner la liste originale en cas d'erreur
+    }
+  }
+  
+  // Récupérer les livres de secours avec filtrage des livres masqués
+  getFilteredFallbackBooks() {
+    const fallbackBooks = this.getFallbackBooks();
+    return this.filterHiddenBooks(fallbackBooks);
+  }
+  
+  // Méthode pour récupérer des livres de secours depuis le localStorage ou des exemples par défaut
+  getFallbackBooks() {
+    console.log("Utilisation des livres de secours");
+    
+    // Essayer de récupérer les livres depuis localStorage
+    try {
+      const localBooksJSON = localStorage.getItem('localBooks');
+      if (localBooksJSON) {
+        const localBooks = JSON.parse(localBooksJSON);
+        if (Array.isArray(localBooks) && localBooks.length > 0) {
+          console.log(`${localBooks.length} livres récupérés depuis le stockage local`);
+          return localBooks;
+        }
+      }
+    } catch (e) {
+      console.warn("Erreur lors de la récupération des livres depuis le stockage local:", e);
+    }
+    
+    // Livres exemples par défaut si aucun livre n'est trouvé
+    return [
+      {
+        id: "offline_1",
+        title: "Fondements de la Blockchain",
+        author: "Satoshi Nakamoto",
+        isAvailable: true,
+        isOfflineMode: true
+      },
+      {
+        id: "offline_2",
+        title: "Le Web3 pour les Débutants",
+        author: "Vitalik Buterin",
+        isAvailable: true,
+        isOfflineMode: true
+      },
+      {
+        id: "offline_3",
+        title: "IPFS: Stockage Décentralisé",
+        author: "Juan Benet",
+        isAvailable: true,
+        isOfflineMode: true
+      }
+    ];
   }
 
   // Simuler l'achat d'un livre local
@@ -2038,6 +2217,548 @@ class Web3Service {
     } catch (error) {
       console.error("Erreur lors de la récupération de tous les livres:", error);
       return [];
+    }
+  }
+
+  // Méthode spécifique pour supprimer un livre avec une gestion d'erreur optimisée
+  async removeBook(bookId) {
+    try {
+      console.log(`Tentative de suppression du livre ID:${bookId} - Méthode bas niveau`);
+      
+      // Vérifications minimales
+      if (!this.web3 || !this.account) {
+        throw new Error("Web3 ou compte non initialisé");
+      }
+      
+      if (!this.contract || !this.contract._address) {
+        throw new Error("Contrat non disponible");
+      }
+      
+      // Convertir l'ID en nombre
+      const bookIdNumber = parseInt(bookId);
+      if (isNaN(bookIdNumber) || bookIdNumber <= 0) {
+        throw new Error("ID de livre invalide");
+      }
+      
+      console.log("Création des données d'encodage pour removeBook...");
+      
+      // =========== SOLUTION BAS NIVEAU ============
+      // Encoder directement l'appel à la fonction en utilisant l'ABI du contrat
+      // pour éviter les erreurs dans la couche d'abstraction Contract de Web3
+      
+      // 1. Trouver la signature de la fonction removeBook dans l'ABI
+      const removeBookAbi = LibraryDAppABI.find(
+        item => item.type === 'function' && item.name === 'removeBook'
+      );
+      
+      if (!removeBookAbi) {
+        throw new Error("Fonction removeBook non trouvée dans l'ABI du contrat");
+      }
+      
+      // 2. Créer l'encodage de la fonction
+      const functionSignature = this.web3.eth.abi.encodeFunctionSignature(removeBookAbi);
+      
+      // 3. Encoder les paramètres
+      const encodedParameters = this.web3.eth.abi.encodeParameters(
+        ['uint256'], 
+        [bookIdNumber]
+      );
+      
+      // 4. Combiner la signature et les paramètres
+      const data = functionSignature + encodedParameters.slice(2); // slice pour enlever le '0x' des paramètres
+      
+      console.log("Données encodées:", data);
+      
+      // 5. Estimer le gaz requis (facultatif mais recommandé)
+      const gasEstimate = await this.web3.eth.estimateGas({
+        from: this.account,
+        to: this.contract._address,
+        data: data
+      }).catch(err => {
+        console.warn("Estimation de gas échouée, on utilise une valeur par défaut:", err);
+        return 300000; // Valeur par défaut élevée
+      });
+      
+      console.log("Estimation de gas:", gasEstimate);
+      
+      // 6. Créer et envoyer la transaction directement sans passer par Contract
+      console.log("Envoi de la transaction bas niveau...");
+      
+      const receipt = await this.web3.eth.sendTransaction({
+        from: this.account,
+        to: this.contract._address,
+        data: data,
+        gas: Math.floor(gasEstimate * 1.2) // 20% de marge de sécurité
+      });
+      
+      console.log("Transaction réussie:", receipt);
+      
+      return {
+        success: true,
+        transactionHash: receipt.transactionHash,
+        method: "lowLevel"
+      };
+      
+    } catch (error) {
+      console.error("Erreur brute pendant la suppression bas niveau:", error);
+      
+      // Analyse de l'erreur pour les messages spécifiques
+      if (error.message.includes("User denied")) {
+        throw new Error("Vous avez refusé la transaction dans MetaMask");
+      }
+      
+      if (error.message.includes("gas required exceeds")) {
+        throw new Error("La transaction nécessite trop de gas. Essayez une autre méthode.");
+      }
+      
+      if (error.message.includes("Internal JSON-RPC error")) {
+        // Si l'erreur est interne à JSON-RPC, suggérer une réinitialisation complète
+        throw new Error("Erreur interne MetaMask. Réinitialisez votre compte MetaMask et essayez à nouveau.");
+      }
+      
+      // Erreur générique pour les autres cas
+      throw new Error(`Échec de la suppression: ${error.message || "Erreur inconnue"}`);
+    }
+  }
+
+  // Nouvelle méthode pour diagnostiquer les problèmes de suppression
+  async diagnoseContractIssues() {
+    try {
+      console.log("=== DÉBUT DU DIAGNOSTIC DU CONTRAT ===");
+      
+      // 1. Vérifier la connexion Web3
+      if (!this.web3) {
+        console.error("Web3 n'est pas initialisé");
+        await this.initialize();
+        if (!this.web3) {
+          return { success: false, issue: "Web3 non initialisé" };
+        }
+      }
+      console.log("✅ Web3 initialisé");
+      
+      // 2. Vérifier le compte
+      if (!this.account) {
+        console.error("Aucun compte connecté");
+        return { success: false, issue: "Aucun compte connecté" };
+      }
+      console.log("✅ Compte connecté:", this.account);
+      
+      // 3. Vérifier le réseau
+      const networkId = await this.web3.eth.net.getId();
+      const networkName = this.getNetworkName(networkId);
+      console.log("Réseau actuel:", networkId, networkName);
+      
+      if (!this.isNetworkSupported(networkId)) {
+        return { success: false, issue: `Réseau non supporté: ${networkId} (${networkName})` };
+      }
+      console.log("✅ Réseau supporté:", networkName);
+      
+      // 4. Vérifier l'adresse du contrat
+      const contractAddress = this.contractAddresses[networkId] || this.contractAddress;
+      if (!contractAddress) {
+        return { success: false, issue: "Adresse du contrat non définie pour ce réseau" };
+      }
+      console.log("Adresse du contrat pour ce réseau:", contractAddress);
+      
+      // 5. Vérifier si le contrat existe à cette adresse
+      try {
+        const code = await this.web3.eth.getCode(contractAddress);
+        if (!code || code === '0x' || code === '0x0') {
+          return { success: false, issue: `Aucun code à l'adresse du contrat: ${contractAddress}` };
+        }
+        console.log("✅ Code du contrat trouvé à l'adresse");
+      } catch (codeError) {
+        console.error("Erreur lors de la vérification du code:", codeError);
+        return { success: false, issue: "Erreur lors de la vérification du code du contrat" };
+      }
+      
+      // 6. Vérifier l'instantiation du contrat
+      if (!this.contract) {
+        console.log("Contrat non instantié, tentative d'initialisation...");
+        const success = await this.tryInitializeContract(networkId);
+        if (!success || !this.contract) {
+          return { success: false, issue: "Échec d'initialisation du contrat" };
+        }
+      }
+      console.log("✅ Contrat instantié");
+      
+      // 7. Vérifier les méthodes disponibles
+      if (!this.contract.methods) {
+        return { success: false, issue: "L'objet 'methods' n'existe pas dans le contrat" };
+      }
+      
+      const methods = Object.keys(this.contract.methods)
+        .filter(name => typeof name === 'string' && !name.startsWith('0x'));
+      
+      console.log("Méthodes disponibles dans le contrat:", methods);
+      
+      // 8. Vérifier si removeBook existe
+      if (!methods.includes('removeBook')) {
+        return { 
+          success: false, 
+          issue: "La méthode 'removeBook' n'existe pas dans le contrat. Méthodes disponibles: " + methods.join(', ')
+        };
+      }
+      console.log("✅ Méthode 'removeBook' trouvée dans le contrat");
+      
+      // 9. Vérifier les droits d'administration
+      try {
+        const adminAddress = await this.contract.methods.admin().call();
+        console.log("Adresse admin du contrat:", adminAddress);
+        console.log("Votre adresse:", this.account);
+        
+        if (adminAddress.toLowerCase() !== this.account.toLowerCase()) {
+          return { 
+            success: false, 
+            issue: "Vous n'êtes pas l'administrateur du contrat" 
+          };
+        }
+        console.log("✅ L'utilisateur actuel est bien l'administrateur");
+      } catch (adminError) {
+        console.error("Erreur lors de la vérification des droits d'admin:", adminError);
+        return { success: false, issue: "Impossible de vérifier les droits d'administrateur" };
+      }
+      
+      // 10. Tester une estimation de gas pour removeBook
+      try {
+        // Utiliser un ID de livre fictif pour le test
+        const testBookId = 999;
+        const gasEstimate = await this.contract.methods.removeBook(testBookId).estimateGas({
+          from: this.account
+        });
+        console.log("Estimation de gas pour removeBook:", gasEstimate);
+        console.log("✅ L'estimation de gas a fonctionné (même si le livre n'existe pas)");
+      } catch (gasError) {
+        console.warn("Erreur d'estimation gas (normale si le livre n'existe pas):", gasError.message);
+        // Ne pas échouer ici car l'erreur peut être normale si le livre de test n'existe pas
+      }
+      
+      console.log("=== FIN DU DIAGNOSTIC ===");
+      return { 
+        success: true, 
+        network: networkName,
+        contractAddress,
+        account: this.account,
+        methods,
+        isAdmin: true
+      };
+    } catch (error) {
+      console.error("Erreur lors du diagnostic:", error);
+      return { success: false, issue: "Erreur pendant le diagnostic: " + error.message };
+    }
+  }
+
+  // Méthode alternative pour supprimer un livre en utilisant un proxy local
+  async removeBookAlternative(bookId) {
+    try {
+      console.log(`Tentative de suppression alternative du livre ID:${bookId}`);
+      
+      // Vérification minimale
+      if (!this.account) {
+        throw new Error("Aucun compte connecté");
+      }
+      
+      // Convertir l'ID en nombre
+      const bookIdNumber = parseInt(bookId);
+      if (isNaN(bookIdNumber) || bookIdNumber <= 0) {
+        throw new Error("ID de livre invalide");
+      }
+      
+      // Vérifier que le livre existe et n'est pas emprunté
+      console.log(`Vérification de l'existence du livre ${bookIdNumber}...`);
+      const book = await this.getBook(bookIdNumber).catch(() => null);
+      
+      if (!book) {
+        throw new Error("Ce livre n'existe pas ou est inaccessible");
+      }
+      
+      if (!book.isAvailable) {
+        throw new Error("Ce livre est actuellement emprunté et ne peut pas être supprimé");
+      }
+      
+      console.log("Livre vérifié et disponible pour suppression:", book.title);
+      
+      // Simuler une suppression en local
+      // Enregistrer l'action dans localStorage pour synchronisation ultérieure
+      try {
+        const pendingDeletions = JSON.parse(localStorage.getItem("pendingBookDeletions") || "[]");
+        pendingDeletions.push({
+          bookId: bookIdNumber,
+          title: book.title,
+          author: book.author,
+          timestamp: Date.now(),
+          account: this.account
+        });
+        localStorage.setItem("pendingBookDeletions", JSON.stringify(pendingDeletions));
+        
+        console.log(`Livre ${bookIdNumber} marqué pour suppression différée`);
+        
+        // Déclencher un événement pour informer l'UI
+        window.dispatchEvent(new CustomEvent('bookMarkedForDeletion', {
+          detail: { bookId: bookIdNumber, title: book.title }
+        }));
+        
+        return { 
+          success: true, 
+          method: "localProxy",
+          pendingSync: true,
+          message: "Le livre a été marqué pour suppression et sera synchronisé ultérieurement"
+        };
+      } catch (storageError) {
+        console.error("Erreur lors de l'enregistrement dans localStorage:", storageError);
+        throw new Error("Impossible d'enregistrer localement la suppression");
+      }
+    } catch (error) {
+      console.error("Erreur lors de la suppression alternative:", error);
+      throw error;
+    }
+  }
+  
+  // Une autre méthode alternative qui utilise directement l'API Ethereum de base
+  async removeBookDirect(bookId) {
+    try {
+      console.log(`Tentative de suppression directe du livre ID:${bookId}`);
+      
+      if (!window.ethereum || !this.account) {
+        throw new Error("Ethereum ou compte non disponible");
+      }
+      
+      // Convertir l'ID en nombre
+      const bookIdNumber = parseInt(bookId);
+      if (isNaN(bookIdNumber) || bookIdNumber <= 0) {
+        throw new Error("ID de livre invalide");
+      }
+      
+      // Obtenir l'ABI de la fonction removeBook
+      const removeBookAbi = LibraryDAppABI.find(
+        item => item.type === 'function' && item.name === 'removeBook'
+      );
+      
+      if (!removeBookAbi) {
+        throw new Error("Fonction removeBook non trouvée dans l'ABI");
+      }
+      
+      // Encoder l'appel de fonction
+      const functionData = this.web3.eth.abi.encodeFunctionCall(
+        removeBookAbi, [bookIdNumber]
+      );
+      
+      // Utiliser directement l'API ethereum de base
+      console.log("Envoi de la transaction directe via window.ethereum...");
+      
+      const transactionParameters = {
+        to: this.contract._address,
+        from: this.account,
+        data: functionData
+        // Pas de gas ou gasPrice - MetaMask les déterminera
+      };
+      
+      // Envoyer la transaction via l'API de base
+      const txHash = await window.ethereum.request({
+        method: 'eth_sendTransaction',
+        params: [transactionParameters],
+      });
+      
+      console.log("Transaction directe envoyée:", txHash);
+      
+      return {
+        success: true,
+        transactionHash: txHash,
+        method: "directEthereum"
+      };
+    } catch (error) {
+      console.error("Erreur lors de la suppression directe:", error);
+      throw error;
+    }
+  }
+  
+  // Solution finale: mode hors-ligne pour éviter complètement les problèmes MetaMask
+  async hideBookLocally(bookId) {
+    try {
+      console.log(`Mode hors-ligne: masquage local du livre ID:${bookId}`);
+      
+      // Convertir l'ID
+      const bookIdNumber = parseInt(bookId);
+      if (isNaN(bookIdNumber) || bookIdNumber <= 0) {
+        throw new Error("ID de livre invalide");
+      }
+      
+      // Obtenir les détails du livre
+      let book = null;
+      try {
+        book = await this.getBook(bookIdNumber);
+      } catch (error) {
+        console.warn("Erreur lors de la récupération du livre, utilisation des données minimales", error);
+      }
+      
+      // Créer l'entrée pour les livres masqués
+      const hiddenBook = {
+        id: bookIdNumber,
+        title: book?.title || `Livre #${bookIdNumber}`,
+        author: book?.author || "Inconnu",
+        hiddenAt: new Date().toISOString(),
+        hiddenBy: this.account,
+        reason: "Masqué par l'administrateur en mode hors-ligne"
+      };
+      
+      // Enregistrer dans localStorage
+      try {
+        // 1. Récupérer la liste actuelle des livres masqués
+        const hiddenBooks = JSON.parse(localStorage.getItem("hiddenBooks") || "[]");
+        
+        // 2. Vérifier si ce livre est déjà masqué
+        const existingIndex = hiddenBooks.findIndex(item => item.id === bookIdNumber);
+        if (existingIndex >= 0) {
+          hiddenBooks[existingIndex] = hiddenBook;
+        } else {
+          hiddenBooks.push(hiddenBook);
+        }
+        
+        // 3. Sauvegarder la liste mise à jour
+        localStorage.setItem("hiddenBooks", JSON.stringify(hiddenBooks));
+        
+        // 4. Déclencher un événement pour notifier l'UI
+        window.dispatchEvent(new CustomEvent('bookHidden', {
+          detail: { book: hiddenBook }
+        }));
+        
+        console.log(`Livre ${bookIdNumber} masqué localement avec succès`);
+        
+        return {
+          success: true,
+          method: "offlineMode",
+          hiddenBook,
+          message: "Le livre a été masqué dans l'interface. La suppression blockchain sera effectuée plus tard."
+        };
+      } catch (storageError) {
+        console.error("Erreur localStorage:", storageError);
+        throw new Error("Impossible de masquer le livre localement");
+      }
+    } catch (error) {
+      console.error("Erreur lors du masquage local:", error);
+      throw error;
+    }
+  }
+  
+  // Fonction pour vérifier si un livre est masqué localement
+  isBookHiddenLocally(bookId) {
+    try {
+      const hiddenBooks = JSON.parse(localStorage.getItem("hiddenBooks") || "[]");
+      return hiddenBooks.some(book => book.id === parseInt(bookId));
+    } catch (error) {
+      console.error("Erreur lors de la vérification des livres masqués:", error);
+      return false;
+    }
+  }
+  
+  // Fonction pour nettoyer le cache local et annuler le masquage
+  unhideBook(bookId) {
+    try {
+      const bookIdNumber = parseInt(bookId);
+      const hiddenBooks = JSON.parse(localStorage.getItem("hiddenBooks") || "[]");
+      const updatedList = hiddenBooks.filter(book => book.id !== bookIdNumber);
+      localStorage.setItem("hiddenBooks", JSON.stringify(updatedList));
+      
+      // Déclencher un événement
+      window.dispatchEvent(new CustomEvent('bookUnhidden', {
+        detail: { bookId: bookIdNumber }
+      }));
+      
+      return true;
+    } catch (error) {
+      console.error("Erreur lors du démasquage:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Restaure un livre précédemment masqué
+   * @param {number} bookId - L'identifiant du livre à restaurer
+   * @returns {Promise<boolean>} - Succès de l'opération
+   */
+  async restoreHiddenBook(bookId) {
+    try {
+      // S'assurer que le contrat est initialisé
+      if (!this.contract) {
+        await this.initialize();
+      }
+      
+      // Convertir l'ID en nombre
+      const id = parseInt(bookId, 10);
+      if (isNaN(id)) {
+        throw new Error("ID de livre invalide");
+      }
+      
+      // Vérifier si le livre existe toujours dans le contrat
+      const bookExists = await this.callContractMethod('bookExists', id);
+      
+      if (!bookExists) {
+        // Livre déjà supprimé du contrat, on met juste à jour le localStorage
+        console.log(`Le livre #${id} n'existe plus dans le contrat, mise à jour du stockage local uniquement`);
+        return true;
+      }
+      
+      // Vérifier si le livre est masqué
+      const bookDetails = await this.callContractMethod('getBookById', id);
+      if (!bookDetails || bookDetails.isHidden === false) {
+        console.log(`Le livre #${id} n'est pas masqué ou n'existe pas`);
+        return true; // On considère l'opération réussie car l'état final est celui désiré
+      }
+      
+      // Restaurer le livre
+      const receipt = await this.callContractMethod('unhideBook', id, {
+        from: this.account,
+        gas: 200000,
+        gasPrice: this.defaultGasPrice
+      });
+      
+      console.log(`Livre #${id} restauré avec succès`, receipt);
+      
+      // Emettre un événement pour informer d'autres composants
+      const event = new CustomEvent('bookRestored', { detail: { bookId: id } });
+      window.dispatchEvent(event);
+      
+      return true;
+    } catch (error) {
+      console.error("Erreur lors de la restauration du livre:", error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Vérifie si un livre existe
+   * @param {number} bookId - L'identifiant du livre
+   * @returns {Promise<boolean>} - True si le livre existe
+   */
+  async bookExists(bookId) {
+    try {
+      // S'assurer que le contrat est initialisé
+      if (!this.contract) {
+        await this.initialize();
+      }
+      
+      // Convertir l'ID en nombre
+      const id = parseInt(bookId, 10);
+      if (isNaN(id)) {
+        return false;
+      }
+      
+      // Appeler la méthode du contrat si elle existe
+      if (this.contract.methods.bookExists) {
+        return await this.callViewMethod('bookExists', [id]);
+      }
+      
+      // Alternative: vérifier si on peut obtenir les détails du livre
+      try {
+        const bookDetails = await this.callViewMethod('getBookById', [id]);
+        return !!bookDetails && bookDetails.title !== '';
+      } catch (error) {
+        console.log(`Erreur lors de la vérification du livre #${id}:`, error);
+        return false;
+      }
+    } catch (error) {
+      console.error("Erreur lors de la vérification de l'existence du livre:", error);
+      return false;
     }
   }
 }

@@ -13,6 +13,7 @@ import AdminTab from './components/AdminTab';
 import Notification from './components/common/Notification';
 import LoadingIndicator from './components/common/LoadingIndicator';
 import LoginTab from './components/LoginTab';
+import TransactionsAdmin from './components/TransactionsAdmin';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -274,12 +275,19 @@ const App = () => {
     }
   };
 
-  // Fonction pour rafraîchir la connexion sans recharger la page
+  // Rafraîchir la connexion
   const refreshConnection = async () => {
     console.log("Rafraîchissement de la connexion...");
     setIsLoading(true);
     
     try {
+      // Définir explicitement l'adresse du contrat avant l'initialisation
+      const newContractAddress = '0xf9a82C631f7C03bb2DCA0435C982826621966e15';
+      console.log(`Mise à jour de l'adresse du contrat pour refresh: ${newContractAddress}`);
+      web3Service.contractAddress = newContractAddress;
+      web3Service.contractAddresses[1337] = newContractAddress;
+      web3Service.contractAddresses[5777] = newContractAddress;
+      
       // Réinitialiser le service Web3
       web3Service.resetState();
       
@@ -306,6 +314,64 @@ const App = () => {
           setActiveTab('login');
         }
       } else {
+        // Tentative de connexion manuelle avec l'adresse spécifique
+        console.log("Échec du rafraîchissement automatique, tentative de connexion manuelle au contrat");
+        
+        try {
+          if (web3Service.web3) {
+            // Obtenir le compte
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            if (accounts && accounts.length > 0) {
+              web3Service.account = accounts[0];
+              
+              // Tester l'existence du contrat à cette adresse
+              const code = await web3Service.web3.eth.getCode(newContractAddress);
+              if (code && code !== '0x' && code !== '0x0') {
+                console.log("Code de contrat trouvé à l'adresse spécifiée");
+                
+                // Initialiser manuellement le contrat
+                const LibraryContractABI = require('./LibraryDAppABI.json');
+                web3Service.contract = new web3Service.web3.eth.Contract(
+                  LibraryContractABI,
+                  newContractAddress
+                );
+                
+                web3Service.initialized = true;
+                
+                // Tester un appel au contrat
+                const adminAddress = await web3Service.contract.methods.admin().call();
+                console.log("Contrat initialisé manuellement avec succès. Admin:", adminAddress);
+                
+                // Mettre à jour l'état de l'application
+                const account = web3Service.getAccount();
+                setIsConnected(true);
+                setAccount(account);
+                
+                // Vérifier l'inscription
+                const registered = await web3Service.isUserRegistered();
+                setIsRegistered(registered);
+                
+                if (registered) {
+                  const reputation = await web3Service.getUserReputation();
+                  setUserReputation(Number(reputation));
+                  showNotification("Connexion rafraîchie avec succès (mode manuel)", "success");
+                } else {
+                  showNotification("Connexion rétablie. Veuillez vous inscrire.", "warning");
+                  setActiveTab('login');
+                }
+                
+                return;
+              } else {
+                console.error("Aucun code de contrat à cette adresse");
+              }
+            } else {
+              console.error("Aucun compte disponible");
+            }
+          }
+        } catch (manualError) {
+          console.error("Échec de l'initialisation manuelle lors du rafraîchissement:", manualError);
+        }
+        
         setIsConnected(false);
         setAccount(null);
         setIsRegistered(false);
@@ -335,8 +401,15 @@ const App = () => {
       }
       
       setIsLoading(true);
-      console.log("Appel à web3Service.initialize()");
       
+      // Définir explicitement l'adresse du contrat avant l'initialisation
+      const newContractAddress = '0xf9a82C631f7C03bb2DCA0435C982826621966e15';
+      console.log(`Mise à jour de l'adresse du contrat à: ${newContractAddress}`);
+      web3Service.contractAddress = newContractAddress;
+      web3Service.contractAddresses[1337] = newContractAddress;
+      web3Service.contractAddresses[5777] = newContractAddress;
+      
+      console.log("Appel à web3Service.initialize()");
       const success = await web3Service.initialize();
       console.log("Résultat de l'initialisation:", success);
       
@@ -367,6 +440,56 @@ const App = () => {
           console.log("Redirection vers l'écran d'inscription...");
         }
       } else {
+        // Tentative de connexion manuelle avec l'adresse spécifique
+        console.log("Échec de l'initialisation automatique, tentative de connexion manuelle au contrat");
+        
+        try {
+          if (web3Service.web3) {
+            // Tester l'existence du contrat à cette adresse
+            const code = await web3Service.web3.eth.getCode(newContractAddress);
+            if (code && code !== '0x' && code !== '0x0') {
+              console.log("Code de contrat trouvé à l'adresse spécifiée");
+              
+              // Initialiser manuellement le contrat
+              const LibraryContractABI = require('./LibraryDAppABI.json');
+              web3Service.contract = new web3Service.web3.eth.Contract(
+                LibraryContractABI,
+                newContractAddress
+              );
+              
+              web3Service.initialized = true;
+              
+              // Tester un appel au contrat
+              const adminAddress = await web3Service.contract.methods.admin().call();
+              console.log("Contrat initialisé manuellement avec succès. Admin:", adminAddress);
+              
+              // Mettre à jour l'état de l'application
+              const account = web3Service.getAccount();
+              setIsConnected(true);
+              setAccount(account);
+              
+              // Vérifier l'inscription
+              const registered = await web3Service.isUserRegistered();
+              setIsRegistered(registered);
+              
+              if (registered) {
+                const reputation = await web3Service.getUserReputation();
+                setUserReputation(Number(reputation));
+                showNotification("Connexion réussie (mode manuel)", "success");
+              } else {
+                showNotification("Veuillez vous inscrire pour utiliser l'application", "warning");
+                setActiveTab('login');
+              }
+              
+              return;
+            } else {
+              console.error("Aucun code de contrat à cette adresse");
+            }
+          }
+        } catch (manualError) {
+          console.error("Échec de l'initialisation manuelle:", manualError);
+        }
+        
         // Vérifier si l'adresse du contrat est un placeholder
         if (web3Service.contractAddress.includes('...')) {
           showNotification("L'adresse du contrat n'est pas configurée correctement. Contactez l'administrateur.", "error");
@@ -571,6 +694,7 @@ const App = () => {
           account={account}
           connectToMetaMask={connectToMetaMask}
         />}
+        {activeTab === 'transactions' && <TransactionsAdmin />}
       </main>
       
       <Footer setActiveTab={handleTabChange} />
