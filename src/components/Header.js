@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut } from 'lucide-react';
 import web3Service from '../services/Web3Service';
 
-const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet, showNotification }) => {
+const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet, showNotification, userReputation }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Fermer le menu de compte lorsqu'on clique ailleurs
   React.useEffect(() => {
@@ -68,6 +69,31 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
     console.log("- Bouton S'inscrire doit apparaître:", account && !isRegistered);
   };
 
+  // Vérifier si l'utilisateur est administrateur au chargement et lorsque le compte change
+  useEffect(() => {
+    const checkIfAdmin = async () => {
+      if (isConnected && account) {
+        try {
+          const admin = await web3Service.isAdmin();
+          setIsAdmin(admin);
+        } catch (error) {
+          console.error("Erreur lors de la vérification des droits admin:", error);
+          setIsAdmin(false);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+    };
+    
+    checkIfAdmin();
+  }, [isConnected, account]);
+
+  // Afficher l'adresse du compte de manière abrégée
+  const formatAddress = (address) => {
+    if (!address) return "";
+    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  };
+
   return (
     <header className="bg-white shadow-md">
       <div className="container mx-auto px-4 py-3">
@@ -113,13 +139,24 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
               <LayoutDashboard size={18} className="mr-1" />
               <span>Mon Espace</span>
             </button>
-            <button
-              onClick={() => setActiveTab('admin')}
-              className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'admin' ? 'bg-purple-100 text-[#6A1B9A] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
-            >
-              <Settings size={18} className="mr-1" />
-              <span>Admin</span>
-            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => setActiveTab('admin')}
+                  className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'admin' ? 'bg-purple-100 text-[#6A1B9A] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+                >
+                  <Settings size={18} className="mr-1" />
+                  <span>Admin</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('transactions')}
+                  className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'transactions' ? 'bg-purple-100 text-[#6A1B9A] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+                >
+                  <Settings size={18} className="mr-1" />
+                  <span>Transactions</span>
+                </button>
+              </>
+            )}
             
             {/* Bouton S'inscrire toujours visible */}
             <button
@@ -143,7 +180,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                       onClick={toggleAccountMenu}
                     >
                       <div className={`w-2 h-2 rounded-full mr-2 ${isRegistered ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-                      {`${account.substring(0, 6)}...${account.substring(account.length - 4)}`}
+                      {formatAddress(account)}
                     </div>
                     
                     {/* Menu déroulant du compte */}
@@ -292,15 +329,28 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
               >
                 <LayoutDashboard size={18} className="mr-2" /> Mon Espace
               </button>
-              <button
-                onClick={() => {
-                  setActiveTab('admin');
-                  setMobileMenuOpen(false);
-                }}
-                className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'admin' ? 'bg-purple-100 text-[#6A1B9A]' : 'text-gray-600 hover:bg-gray-100'}`}
-              >
-                <Settings size={18} className="mr-2" /> Admin
-              </button>
+              {isAdmin && (
+                <>
+                  <button
+                    onClick={() => {
+                      setActiveTab('admin');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'admin' ? 'bg-purple-100 text-[#6A1B9A]' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    <Settings size={18} className="mr-2" /> Admin
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab('transactions');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'transactions' ? 'bg-purple-100 text-[#6A1B9A]' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    <Settings size={18} className="mr-2" /> Transactions
+                  </button>
+                </>
+              )}
               
               <div className="pt-2 border-t">
                 {/* Bouton d'inscription */}

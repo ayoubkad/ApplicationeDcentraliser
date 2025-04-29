@@ -185,9 +185,218 @@ class IPFSService {
     }
   }
 
-  // Obtenir l'URL de la passerelle IPFS
+  // Fonction pour générer une URL avec proxy CORS pour les ressources IPFS
   getIPFSGatewayURL(ipfsHash) {
-    return ipfsHash ? `${this.currentConfig.gateway}/ipfs/${ipfsHash}` : '';
+    if (!ipfsHash) return null;
+    
+    // Liste de passerelles IPFS publiques avec configuration CORS améliorée
+    const gateways = [
+      // Utiliser le nœud local en priorité si disponible
+      `${this.currentConfig.gateway}/ipfs/${ipfsHash}`,
+      // Passerelles tierces avec proxy CORS
+      `https://ipfs.infura-ipfs.io/ipfs/${ipfsHash}`,
+      `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+      `https://nftstorage.link/ipfs/${ipfsHash}`,
+      // API directe (si le CORS est autorisé)
+      `${this.currentConfig.apiUrl}/cat?arg=${ipfsHash}`,
+      // Méthodes de secours
+      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
+      `https://gateway.ipfs.io/ipfs/${ipfsHash}`
+    ];
+    
+    // Utiliser la première passerelle par défaut
+    return gateways[0];
+  }
+
+  // Récupérer les métadonnées d'un livre stocké sur IPFS avec contournement CORS
+  async getBookMetadata(ipfsHash) {
+    if (!ipfsHash) {
+      console.error("Hash IPFS manquant pour récupérer les métadonnées du livre");
+      return null;
+    }
+
+    this.log(`Récupération des métadonnées du livre depuis IPFS: ${ipfsHash}`);
+    
+    // Liste des passerelles à essayer
+    const gateways = [
+      // Utiliser le nœud local en priorité
+      `${this.currentConfig.gateway}/ipfs/${ipfsHash}`,
+      // Passerelles supportant CORS
+      `https://ipfs.infura-ipfs.io/ipfs/${ipfsHash}`,
+      `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+      `https://nftstorage.link/ipfs/${ipfsHash}`,
+      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`
+    ];
+    
+    // API directe avec authentification si nécessaire (évite les problèmes CORS)
+    try {
+      // Essayer d'abord via l'API directe du nœud IPFS si disponible
+      const headers = this.getAuthHeaders();
+      const response = await axios.post(
+        `${this.currentConfig.apiUrl}/cat?arg=${ipfsHash}`,
+        null,
+        {
+          headers,
+          responseType: 'json'
+        }
+      ).catch(() => null);
+      
+      if (response && response.data) {
+        this.log(`Métadonnées récupérées via API IPFS locale`);
+        return typeof response.data === 'string' 
+          ? JSON.parse(response.data) 
+          : response.data;
+      }
+    } catch (directError) {
+      this.log(`Échec de récupération via API directe: ${directError.message}`, 'warn');
+    }
+    
+    // Essayer chaque passerelle jusqu'à ce qu'une fonctionne
+    for (const gateway of gateways) {
+      try {
+        this.log(`Tentative via passerelle: ${gateway}`);
+        
+        // Utiliser axios avec timeout et gestion d'erreur
+        const response = await axios.get(gateway, {
+          timeout: 5000,
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        }).catch(() => null);
+        
+        if (response && response.data) {
+          this.log(`Métadonnées récupérées via: ${gateway}`);
+          return response.data;
+        }
+      } catch (error) {
+        this.log(`Échec avec passerelle ${gateway}: ${error.message}`, 'warn');
+        continue; // Continuer avec la passerelle suivante
+      }
+    }
+    
+    // Si toutes les méthodes échouent, essayer le contournement CORS avec JSONP ou un proxy
+    try {
+      // Utiliser un service proxy CORS public
+      const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://cloudflare-ipfs.com/ipfs/${ipfsHash}`)}`;
+      
+      this.log(`Tentative finale via proxy CORS: ${corsProxyUrl}`);
+      const response = await axios.get(corsProxyUrl, { timeout: 10000 });
+      
+      if (response && response.data) {
+        this.log(`Métadonnées récupérées via proxy CORS`);
+        return response.data;
+      }
+    } catch (proxyError) {
+      this.log(`Échec via proxy CORS: ${proxyError.message}`, 'error');
+    }
+    
+    // Échec de toutes les tentatives
+    console.error("Toutes les tentatives de récupération des métadonnées ont échoué");
+    return null;
+  }
+  
+  // Récupérer l'URL d'une image stockée sur IPFS avec contournement CORS
+  async getIPFSImageUrl(ipfsHash) {
+    if (!ipfsHash) return null;
+    
+    // Liste des passerelles à essayer pour les images
+    const imageGateways = [
+      // Nœud local en priorité
+      `${this.currentConfig.gateway}/ipfs/${ipfsHash}`,
+      // Services compatibles CORS pour les images
+      `https://nftstorage.link/ipfs/${ipfsHash}`,
+      `https://ipfs.infura-ipfs.io/ipfs/${ipfsHash}`,
+      `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`
+    ];
+    
+    // Fonction pour vérifier si une URL d'image est accessible
+    const checkImageUrl = async (url) => {
+      try {
+        const response = await axios.head(url, { 
+          timeout: 3000,
+          headers: { 'Cache-Control': 'no-cache' }
+        }).catch(() => null);
+        
+        return response && response.status === 200 && 
+               response.headers['content-type']?.includes('image');
+      } catch (error) {
+        return false;
+      }
+    };
+    
+    // Vérifier chaque passerelle et retourner la première qui fonctionne
+    for (const gateway of imageGateways) {
+      const isValid = await checkImageUrl(gateway);
+      if (isValid) {
+        this.log(`Image IPFS trouvée sur: ${gateway}`, 'info');
+        return gateway;
+      }
+    }
+    
+    // Contournement via proxy CORS pour les images
+    const corsProxyImageUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://cloudflare-ipfs.com/ipfs/${ipfsHash}`)}`;
+    const isProxyValid = await checkImageUrl(corsProxyImageUrl);
+    
+    if (isProxyValid) {
+      this.log(`Image IPFS trouvée via proxy CORS`, 'info');
+      return corsProxyImageUrl;
+    }
+    
+    // Si aucun moyen ne fonctionne, retourner une URL avec indication d'erreur
+    this.log(`Aucune passerelle IPFS ne répond pour l'image: ${ipfsHash}`, 'warn');
+    
+    // Fallback : utiliser une URL qui passera par le gestionnaire d'erreur du composant d'image
+    return `${this.currentConfig.gateway}/ipfs/${ipfsHash}`;
+  }
+
+  // Nouvelle fonction améliorée pour générer les URLs d'images IPFS avec plusieurs passerelles
+  async generateIPFSImageUrl(ipfsHash) {
+    if (!ipfsHash) return null;
+    
+    // Liste de passerelles IPFS publiques pour les images
+    const imageGateways = [
+      `https://ipfs.io/ipfs/${ipfsHash}`,
+      `https://gateway.ipfs.io/ipfs/${ipfsHash}`,
+      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
+      `https://dweb.link/ipfs/${ipfsHash}`
+    ];
+    
+    // Fonction pour vérifier si une URL est accessible
+    const checkImageUrl = async (url) => {
+      try {
+        const response = await fetch(url, { 
+          method: 'HEAD', 
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        
+        if (response.ok) {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('image')) {
+            return true;
+          }
+        }
+        return false;
+      } catch (error) {
+        return false;
+      }
+    };
+    
+    // Vérifier chaque passerelle et retourner la première qui fonctionne
+    for (const gateway of imageGateways) {
+      const isValid = await checkImageUrl(gateway);
+      if (isValid) {
+        this.log(`Image IPFS trouvée sur: ${gateway}`, 'info');
+        return gateway;
+      }
+    }
+    
+    // Si aucune passerelle ne fonctionne, retourner quand même la première URL
+    // pour permettre au composant d'affichage de gérer l'erreur si nécessaire
+    this.log(`Aucune passerelle IPFS ne répond pour l'image: ${ipfsHash}`, 'warn');
+    return imageGateways[0];
   }
 }
 

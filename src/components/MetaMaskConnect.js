@@ -96,14 +96,39 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
   }, [web3Service]);
 
   // Handle account changes
-  const handleAccountsChanged = (accounts) => {
+  const handleAccountsChanged = async (accounts) => {
     if (accounts.length === 0) {
       handleDisconnect();
     } else {
-      setAccount(accounts[0]);
+      const newAccount = accounts[0];
+      setAccount(newAccount);
       setIsConnected(true);
       setError(null);
-      if (onConnect) onConnect(accounts[0]);
+      
+      // Vérifier si le nouvel utilisateur est déjà inscrit
+      if (web3Service && web3Service.isUserRegistered) {
+        try {
+          const registered = await web3Service.isUserRegistered(newAccount);
+          setIsRegistered(registered);
+          
+          if (registered && web3Service.getUserReputation) {
+            const reputation = await web3Service.getUserReputation(newAccount);
+            setUserReputation(Number(reputation));
+          } else {
+            // Informer l'application du changement d'utilisateur non inscrit
+            window.dispatchEvent(new CustomEvent('metamaskAccountChanged', { 
+              detail: { 
+                account: newAccount,
+                isRegistered: false
+              } 
+            }));
+          }
+        } catch (err) {
+          console.error("Error checking registration status:", err);
+        }
+      }
+      
+      if (onConnect) onConnect(newAccount);
     }
   };
 
