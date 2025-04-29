@@ -8,9 +8,9 @@ contract LibraryDApp {
     // Structure pour un utilisateur
     struct User {
         string name;           // Nom de l'utilisateur
-        Role role;            // Rôle (étudiant, professeur, admin)
-        uint reputation;      // Score de réputation (0-100)
-        bool exists;          // Vérifie si l'utilisateur est inscrit
+        uint8 role;            // Rôle (étudiant, professeur, admin)
+        uint256 reputation;    // Score de réputation (0-100)
+        bool isRegistered;     // Vérifie si l'utilisateur est inscrit
     }
 
     // Structure pour un livre
@@ -65,6 +65,8 @@ contract LibraryDApp {
     event BookBorrowed(uint indexed bookId, address indexed borrower, uint dueTime, uint borrowId);
     event BookReturned(uint indexed bookId, address indexed borrower, uint reputation, bool isLate);
     event ReputationUpdated(address indexed user, uint newReputation);
+    // Événement pour notifier la suppression d'un livre
+    event BookRemoved(uint indexed bookId, string title);
 
     // Modificateur pour restreindre l'accès à l'administrateur
     modifier onlyAdmin() {
@@ -74,7 +76,7 @@ contract LibraryDApp {
 
     // Modificateur pour vérifier qu'un utilisateur est inscrit
     modifier onlyRegistered() {
-        require(users[msg.sender].exists, "LibraryDApp: utilisateur non inscrit");
+        require(users[msg.sender].isRegistered, "LibraryDApp: utilisateur non inscrit");
         _;
     }
     
@@ -93,17 +95,17 @@ contract LibraryDApp {
     // Constructeur : initialise l'administrateur comme le déployeur du contrat
     constructor() { 
         admin = msg.sender;
-        users[admin] = User("Admin", Role.Admin, MAX_REPUTATION, true);
+        users[admin] = User("Admin", uint8(Role.Admin), MAX_REPUTATION, true);
         emit UserRegistered(admin, "Admin", Role.Admin);
     }
 
     // Inscription d'un utilisateur
     function registerUser(string memory _name, Role _role) public {
-        require(!users[msg.sender].exists, "LibraryDApp: utilisateur deja inscrit");
+        require(!users[msg.sender].isRegistered, "LibraryDApp: utilisateur deja inscrit");
         require(_role != Role.Admin, "LibraryDApp: le role Admin ne peut pas etre choisi");
         require(bytes(_name).length > 0, "LibraryDApp: le nom ne peut pas etre vide");
         
-        users[msg.sender] = User(_name, _role, 80, true); // Réputation initiale : 80
+        users[msg.sender] = User(_name, uint8(_role), 80, true); // Réputation initiale : 80
         emit UserRegistered(msg.sender, _name, _role);
     }
 
@@ -239,7 +241,7 @@ contract LibraryDApp {
     
     // Obtenir la réputation d'un utilisateur
     function getUserReputation(address _user) public view returns (uint) {
-        require(users[_user].exists, "LibraryDApp: utilisateur non inscrit");
+        require(users[_user].isRegistered, "LibraryDApp: utilisateur non inscrit");
         return users[_user].reputation;
     }
     
@@ -247,10 +249,34 @@ contract LibraryDApp {
     // Fonction de test pour modifier la réputation (réservée à l'administrateur)
     //cette fonction est utilisée pour les tests (supprimer apres les tests
     function setReputationForTesting(address _user, uint _newReputation) public onlyAdmin {
-        require(users[_user].exists, "LibraryDApp: utilisateur non inscrit");
+        require(users[_user].isRegistered, "LibraryDApp: utilisateur non inscrit");
         require(_newReputation <= MAX_REPUTATION, "LibraryDApp: reputation trop elevee");
         
         users[_user].reputation = _newReputation;
         emit ReputationUpdated(_user, _newReputation);
+    }
+
+    // Suppression d'un livre (par l'administrateur)
+        function removeBook(uint _bookId) public onlyAdmin bookExists(_bookId) {
+            Book storage book = books[_bookId];
+            require(book.isAvailable, "LibraryDApp: livre actuellement emprunte, impossible de supprimer");
+
+            // Sauvegarder le titre pour l'événement
+            string memory title = book.title;
+
+            // Supprimer le livre en réinitialisant ses données
+            delete books[_bookId];
+
+            emit BookRemoved(_bookId, title);
+        }
+
+    /**
+     * @notice Vérifie si une adresse est un utilisateur enregistré
+     * @param _userAddress L'adresse à vérifier
+     * @return bool Retourne true si l'utilisateur est enregistré, false sinon
+     */
+    function isUserRegistered(address _userAddress) public view returns (bool) {
+        // Vérifie si l'utilisateur existe dans le mapping des utilisateurs
+        return users[_userAddress].isRegistered;
     }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, Book, BookX, ArrowDown, ArrowUp, Info, Download, RefreshCw } from 'lucide-react';
 import BookCard from './common/BookCard';
 import web3Service from '../services/Web3Service';
@@ -16,9 +16,10 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
   const [sortDirection, setSortDirection] = useState('asc');
   const [stats, setStats] = useState({ total: 0, available: 0, categories: {} });
   const booksPerPage = 8;
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Charger les livres depuis la blockchain
-  const loadBooks = async () => {
+  const loadBooks = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -27,22 +28,37 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
         await web3Service.initialize();
       }
       
+      console.log("Chargement des livres depuis le contrat...");
+      
       // Utiliser la nouvelle fonction getAllLivres pour récupérer les livres avec toutes leurs métadonnées
       const livresComplets = await web3Service.getAllLivres();
       console.log("Livres complets récupérés depuis IPFS et blockchain:", livresComplets);
       
-      setBooks(livresComplets);
-      calculateStats(livresComplets);
+      // S'assurer que les livres sont correctement triés par ID pour afficher les plus récents
+      const livresTries = livresComplets.sort((a, b) => Number(b.id) - Number(a.id));
+      
+      setBooks(livresTries);
+      calculateStats(livresTries);
+      
+      // Réinitialiser la page si nécessaire
+      if (currentPage > 1 && livresTries.length <= (currentPage - 1) * booksPerPage) {
+        setCurrentPage(1);
+      }
     } catch (error) {
       console.error("Erreur lors du chargement des livres:", error);
       setError("Impossible de charger les livres. Veuillez vérifier votre connexion et réessayer.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, booksPerPage]);
 
   // Calculer les statistiques du catalogue
   const calculateStats = (bookList) => {
+    if (!bookList || bookList.length === 0) {
+      setStats({ total: 0, available: 0, categories: {} });
+      return;
+    }
+    
     const categoriesCount = {};
     let availableCount = 0;
     
@@ -69,20 +85,131 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
     });
   };
 
+  // Gestionnaire d'événement pour le nouvel événement refreshBooks
+  const handleRefreshBooks = useCallback(() => {
+    console.log("Événement refreshBooks reçu, rechargement du catalogue...");
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
+
+  // Gestionnaire d'événement pour bookAdded
+  const handleBookAdded = useCallback((event) => {
+    console.log("Événement bookAdded reçu:", event.detail);
+    
+    // Afficher une notification temporaire pour indiquer l'ajout du livre
+    const newBookTitle = event.detail.title;
+    const bookInfo = document.createElement('div');
+    bookInfo.className = 'book-added-notification';
+    bookInfo.innerHTML = `
+      <div class="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in-up">
+        <div class="flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+          <span>Nouveau livre ajouté: <strong>${newBookTitle}</strong></span>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(bookInfo);
+    
+    // Supprimer la notification après 3 secondes
+    setTimeout(() => {
+      if (bookInfo.parentNode) {
+        bookInfo.parentNode.removeChild(bookInfo);
+      }
+    }, 3000);
+    
+    // Rafraîchir la liste des livres
+    setRefreshTrigger(prev => prev + 1);
+    
+    // Forcer un nouveau chargement des livres
+    loadBooks();
+  }, [loadBooks]);
+
   // Charger les livres au montage du composant et quand isConnected change
   useEffect(() => {
     loadBooks();
     
-    // Écouter les événements d'ajout de livre
-    window.addEventListener('bookAdded', loadBooks);
+    // Écouter les événements d'ajout de livre et de rafraîchissement
+    window.addEventListener('bookAdded', handleBookAdded);
+    window.addEventListener('refreshBooks', handleRefreshBooks);
     
     return () => {
-      window.removeEventListener('bookAdded', loadBooks);
+      window.removeEventListener('bookAdded', handleBookAdded);
+      window.removeEventListener('refreshBooks', handleRefreshBooks);
     };
-  }, [isConnected]);
+  }, [isConnected, loadBooks, handleBookAdded, handleRefreshBooks, refreshTrigger]);
+
+  // Ajouter un style pour l'animation de la notification
+  useEffect(() => {
+    // Créer une feuille de style pour l'animation
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .animate-fade-in-up {
+        animation: fadeInUp 0.3s ease-out forwards;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // Gestionnaire de réinitialisation du catalogue après le chargement initial
+  useEffect(() => {
+    // Si le catalogue est vide après le chargement et qu'il n'y a pas d'erreur, forcer un rechargement
+    if (!loading && books.length === 0 && !error) {
+      console.log("Aucun livre trouvé après le chargement initial, tentative de rechargement...");
+      
+      // Attendre un moment avant de recharger
+      const timer = setTimeout(() => {
+        console.log("Rechargement forcé du catalogue...");
+        
+        // Réinitialiser le service Web3 si nécessaire
+        web3Service.resetState(false);
+        
+        // Puis recharger les livres
+        loadBooks();
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [loading, books.length, error, loadBooks]);
+  
+  // Afficher un message dans la console si aucun livre n'est trouvé après le chargement
+  useEffect(() => {
+    if (!loading && books.length === 0) {
+      console.log("=== DIAGNOSTIC CATALOGUE ===");
+      console.log("État du catalogue:", { 
+        livresChargés: books.length, 
+        enChargement: loading, 
+        erreur: error, 
+        filtres: { 
+          catégorie: categoryFilter, 
+          disponibilité: availabilityFilter,
+          recherche: search 
+        }
+      });
+    }
+  }, [loading, books, error, categoryFilter, availabilityFilter, search]);
 
   // Filtrer et trier les livres
   const getFilteredBooks = () => {
+    // Si aucun livre, retourner un tableau vide
+    if (!books || books.length === 0) {
+      return [];
+    }
+    
     // Filtrage
     const filtered = books.filter(book => {
       const matchesSearch = 
@@ -202,10 +329,27 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
           </button>
           <button
             className="flex items-center justify-center px-4 py-2 border rounded-lg hover:bg-gray-50 transition"
-            onClick={loadBooks}
+            onClick={() => {
+              setLoading(true);
+              // Indicateur visuel de rafraîchissement
+              const refreshButton = document.getElementById('refresh-button');
+              if (refreshButton) {
+                refreshButton.classList.add('animate-spin');
+              }
+              
+              // Petit délai avant de charger pour montrer l'animation
+              setTimeout(() => {
+                loadBooks().finally(() => {
+                  // Arrêter l'animation une fois le chargement terminé
+                  if (refreshButton) {
+                    refreshButton.classList.remove('animate-spin');
+                  }
+                });
+              }, 300);
+            }}
             aria-label="Rafraîchir la liste des livres"
           >
-            <RefreshCw size={18} className="mr-2 text-[#2A3B8C]" />
+            <RefreshCw id="refresh-button" size={18} className="mr-2 text-[#2A3B8C]" />
             <span>Actualiser</span>
           </button>
         </div>

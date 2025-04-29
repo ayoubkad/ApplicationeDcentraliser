@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import web3Service from './services/Web3Service';
 import ipfsService from './services/IPFSService';
 import LibraryDAppABI from './LibraryDAppABI.json';
@@ -642,6 +642,41 @@ const App = () => {
     console.log("Informations du contrat:", contractInfo);
     showNotification(`Contrat connecté sur ${contractInfo.networkName || 'réseau inconnu'}`, "info");
   };
+
+  // Gestionnaire pour forcer la mise à jour des livres dans l'application
+  const handleBookUpdateEvent = useCallback(() => {
+    console.log("Événement de mise à jour des livres détecté");
+    setNotification({
+      message: "Mise à jour du catalogue en cours...",
+      type: "info",
+      duration: 1500
+    });
+    
+    // Attendre un moment puis forcer le rafraîchissement du composant
+    setActiveTab(prevTab => {
+      // Si on était déjà sur le catalogue, forcer un double switch pour rafraîchir complètement
+      if (prevTab === 'catalog') {
+        setTimeout(() => {
+          setActiveTab('catalog');
+        }, 100);
+        return 'home';
+      }
+      return prevTab;
+    });
+  }, [setNotification]);
+  
+  // Écouter les événements de mise à jour des livres
+  useEffect(() => {
+    window.addEventListener('bookAdded', handleBookUpdateEvent);
+    window.addEventListener('bookHidden', handleBookUpdateEvent);
+    window.addEventListener('refreshBooks', handleBookUpdateEvent);
+    
+    return () => {
+      window.removeEventListener('bookAdded', handleBookUpdateEvent);
+      window.removeEventListener('bookHidden', handleBookUpdateEvent);
+      window.removeEventListener('refreshBooks', handleBookUpdateEvent);
+    };
+  }, [handleBookUpdateEvent]);
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">

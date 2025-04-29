@@ -17,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c'  // Ganache - Adresse déployée
+      1337: '0x883DAAb46546446c6644aa4026e7543aba5891D1', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x883DAAb46546446c6644aa4026e7543aba5891D1'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -29,7 +29,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c';
+    this.contractAddress = '0x883DAAb46546446c6644aa4026e7543aba5891D1';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -669,43 +669,69 @@ class Web3Service {
     window.dispatchEvent(event);
   }
 
-  async isUserRegistered(address = null) {
+  async isUserRegistered() {
     try {
-      // Vérifier si nous sommes initialisés et connectés
-      if (!this.isInitialized() || !this.isConnected()) {
+      if (!this.isInitialized()) {
         await this.initialize();
       }
 
-      // Utiliser l'adresse fournie ou l'adresse actuelle
-      const userAddress = address || this.account;
-      
-      if (!userAddress) {
-        console.error("Aucune adresse fournie ou compte non connecté");
-        return false;
+      // Vérifier d'abord si la méthode existe dans le contrat
+      if (this.contract && this.contract.methods.isUserRegistered) {
+        // Si la méthode existe, l'appeler normalement
+        return await this.callViewMethod('isUserRegistered', [this.account]);
+      } else {
+        // Utiliser une méthode alternative pour déterminer si l'utilisateur est enregistré
+        return await this.checkLocalUserRegistration();
       }
-
-      // Vérifier si le contrat est disponible
-      if (!this.contract) {
-        console.error("Contrat non disponible pour vérifier l'inscription");
-        return false;
-      }
-
-      // Appeler la fonction du smart contract pour vérifier si l'utilisateur est enregistré
-      const isRegistered = await this.callViewMethod('isUserRegistered', [userAddress]);
-      
-      // Ajouter un event si l'utilisateur change de compte et n'est pas enregistré
-      if (address && address !== this.account && !isRegistered) {
-        window.dispatchEvent(new CustomEvent('metamaskAccountChanged', { 
-          detail: { 
-            account: address,
-            isRegistered: false
-          } 
-        }));
-      }
-      
-      return isRegistered;
     } catch (error) {
-      console.error("Erreur lors de la vérification de l'enregistrement:", error);
+      console.warn("Erreur lors de la vérification de l'enregistrement de l'utilisateur:", error);
+      // En cas d'erreur, essayer la méthode alternative
+      return await this.checkLocalUserRegistration();
+    }
+  }
+
+  // Méthode alternative pour vérifier l'enregistrement de l'utilisateur
+  async checkLocalUserRegistration() {
+    try {
+      // Vérifier d'abord le stockage local
+      const localRegistration = localStorage.getItem(`user_registered_${this.account}`);
+      if (localRegistration === 'true') {
+        console.log("Utilisateur trouvé dans le stockage local");
+        return true;
+      }
+
+      // Essayer de récupérer l'utilisateur par un autre moyen (par exemple, vérifier s'il a des emprunts)
+      if (this.contract && this.contract.methods.getUserBorrowedBooks) {
+        try {
+          const borrowedBooks = await this.callViewMethod('getUserBorrowedBooks', [this.account]);
+          if (borrowedBooks && borrowedBooks.length > 0) {
+            // Si l'utilisateur a des livres empruntés, il est certainement enregistré
+            console.log("Utilisateur identifié comme enregistré car il a des emprunts");
+            localStorage.setItem(`user_registered_${this.account}`, 'true');
+            return true;
+          }
+        } catch (e) {
+          console.warn("Impossible de vérifier les emprunts de l'utilisateur:", e);
+        }
+      }
+
+      // Vérifier si l'utilisateur a déjà effectué des transactions (méthode générale)
+      try {
+        const web3 = await this.getWeb3();
+        const txCount = await web3.eth.getTransactionCount(this.account);
+        if (txCount > 0) {
+          console.log("Utilisateur identifié comme ayant effectué des transactions:", txCount);
+          localStorage.setItem(`user_registered_${this.account}`, 'true');
+          return true;
+        }
+      } catch (e) {
+        console.warn("Impossible de vérifier l'historique des transactions:", e);
+      }
+
+      console.log("Aucune preuve d'enregistrement trouvée pour l'utilisateur");
+      return false;
+    } catch (error) {
+      console.error("Erreur lors de la vérification locale de l'enregistrement:", error);
       return false;
     }
   }
@@ -957,75 +983,71 @@ class Web3Service {
 
   async getBook(bookId) {
     try {
-      // S'assurer que bookId est un nombre
-      const id = Number(bookId);
-      if (isNaN(id) || id <= 0) {
-        console.error("ID de livre invalide:", bookId);
+      console.log(`Récupération du livre avec ID: ${bookId}`);
+      
+      // Vérifier si le service est initialisé
+      if (!this.isInitialized()) {
+        console.log("Service Web3 non initialisé, tentative d'initialisation...");
+        await this.initialize();
+      }
+      
+      // Vérifier si le contrat est disponible
+      if (!this.contract || !this.contract.methods) {
+        console.error("Contrat non disponible pour récupérer le livre");
         return null;
       }
       
-      // Appeler la méthode du contrat pour obtenir les informations du livre
-      const bookInfo = await this.callViewMethod('books', [id]);
-      
-      if (!bookInfo || !bookInfo.title) {
-        console.warn(`Livre non trouvé ou données invalides pour l'ID ${id}`);
-        return null;
-      }
-      
-      // Récupérer si le livre est actuellement emprunté
-      const isAvailable = await this.callViewMethod('isBookAvailable', [id]);
-      
-      // Récupérer les métadonnées supplémentaires depuis IPFS si disponible
-      let metadata = {};
-      
-      if (bookInfo.ipfsHash) {
+      // Vérifier si le livre existe
+      try {
+        // Conversion explicite de bookId en nombre si c'est une chaîne
+        const bookIdNumber = typeof bookId === 'string' ? parseInt(bookId, 10) : bookId;
+        
+        // La méthode peut s'appeler 'books' et non 'getBook' selon le contrat
+        let bookData;
+        
         try {
-          console.log(`Tentative de récupération des métadonnées IPFS pour le hash: ${bookInfo.ipfsHash}`);
-          // Récupérer les métadonnées depuis IPFS
-          const ipfsGatewayUrl = `https://ipfs.io/ipfs/${bookInfo.ipfsHash}`;
+          bookData = await this.contract.methods.books(bookIdNumber).call();
+        } catch (methodError) {
+          console.warn("Méthode 'books' non disponible, tentative alternative...");
           
-          // Vérifier si la ressource existe
-          const checkResponse = await fetch(ipfsGatewayUrl, { method: 'HEAD' });
-          
-          if (checkResponse.ok) {
-            const contentType = checkResponse.headers.get('content-type');
-            
-            if (contentType && contentType.includes('json')) {
-              // Si c'est un JSON, récupérer les métadonnées
-              const response = await fetch(ipfsGatewayUrl);
-              const data = await response.json();
-              
-              console.log("Métadonnées IPFS récupérées:", data);
-              
-              // Extraire les propriétés utiles
-              metadata = {
-                category: data.category || '',
-                isbn: data.isbn || '',
-                pageCount: data.pageCount ? parseInt(data.pageCount) : null,
-                publishedDate: data.publishedDate || '',
-                description: data.description || '',
-                coverImageHash: data.coverImageHash || '',
-                pdfHash: data.pdfHash || ''
-              };
-            }
+          // Tenter une approche alternative
+          if (this.contract.methods.getBook) {
+            bookData = await this.contract.methods.getBook(bookIdNumber).call();
+          } else {
+            throw new Error("Aucune méthode disponible pour récupérer le livre");
           }
-        } catch (ipfsError) {
-          console.warn(`Erreur lors de la récupération des métadonnées IPFS pour le livre ${id}:`, ipfsError);
         }
+        
+        // Vérifier si les données sont valides
+        if (!bookData || !bookData.id || bookData.id === '0') {
+          console.warn(`Aucun livre trouvé avec l'ID: ${bookId}`);
+          return null;
+        }
+        
+        // Formater les données du livre pour l'UI
+        const book = {
+          id: bookData.id,
+          title: bookData.title,
+          author: bookData.author,
+          ipfsHash: bookData.ipfsHash,
+          isAvailable: bookData.isAvailable,
+          borrowedBy: bookData.borrowedBy,
+          currentBorrowId: bookData.currentBorrowId
+        };
+        
+        // Vérifier si le livre est masqué localement
+        if (this.isBookHiddenLocally(bookIdNumber)) {
+          console.log(`Le livre ${bookId} est masqué localement, mais récupéré pour les opérations système`);
+          book.isHiddenLocally = true;
+        }
+        
+        return book;
+      } catch (error) {
+        console.error(`Erreur lors de la récupération du livre ${bookId}:`, error);
+        return null;
       }
-      
-      // Formater et retourner les informations du livre
-      return {
-        id: id,
-        title: bookInfo.title || '',
-        author: bookInfo.author || '',
-        ipfsHash: bookInfo.ipfsHash || '',
-        isAvailable: isAvailable,
-        // Intégrer les métadonnées supplémentaires si disponibles
-        ...metadata
-      };
     } catch (error) {
-      console.error(`Erreur lors de la récupération du livre ${bookId}:`, error);
+      console.error(`Erreur générale lors de la récupération du livre ${bookId}:`, error);
       return null;
     }
   }
@@ -1279,63 +1301,79 @@ class Web3Service {
   }
 
   async addBook(title, author, ipfsHash) {
-    console.log(`Ajout d'un livre: ${title} par ${author}, IPFS: ${ipfsHash}`);
-    
-    if (!this.initialized) {
-      console.log("Tentative d'initialisation avant d'ajouter un livre...");
-      const success = await this.initialize();
-      if (!success) {
-        throw new Error("Impossible d'initialiser Web3 pour ajouter un livre");
-      }
-    }
-
-    if (!this.account) {
-      throw new Error("Aucun compte connecté pour ajouter un livre");
-    }
-
     try {
-      // Vérifier que le contrat est initialisé
-      if (!this.contract || !this.contract.methods) {
-        console.log("Réinitialisation du contrat...");
-        await this.tryInitializeContract(this.networkId);
-        
-        // Si le contrat est toujours null après initialisation
-        if (!this.contract || !this.contract.methods) {
-          console.error("Impossible d'initialiser le contrat");
-          return this.simulateAddBook(title, author, ipfsHash);
-        }
+      console.log(`Tentative d'ajout du livre: ${title} par ${author} avec hash IPFS: ${ipfsHash}`);
+      
+      if (!this.isInitialized()) {
+        await this.initialize();
       }
-
-      // Vérifier si la méthode addBook existe
-      if (!this.contract.methods.addBook) {
-        console.error("La méthode addBook n'existe pas dans le contrat");
-        return this.simulateAddBook(title, author, ipfsHash);
+      
+      if (!title || !author || !ipfsHash) {
+        throw new Error("Paramètres invalides pour l'ajout du livre");
       }
-
-      console.log("Envoi de la transaction pour ajouter un livre...");
-      const result = await this.contract.methods.addBook(
-        title,
-        author,
-        ipfsHash
-      ).send({ from: this.account });
-
+      
+      // Vérifier s'il s'agit d'un administrateur
+      const isAdmin = await this.isAdmin();
+      if (!isAdmin) {
+        throw new Error("Seul l'administrateur peut ajouter des livres");
+      }
+      
+      // Préparation de l'appel au contrat avec des paramètres explicites
+      console.log("Préparation de l'appel au contrat addBook...");
+      
+      const gasEstimate = await this.contract.methods.addBook(title, author, ipfsHash)
+        .estimateGas({ from: this.account })
+        .catch(error => {
+          console.warn("Erreur lors de l'estimation du gas:", error);
+          return this.defaultGasLimit; // Utiliser une limite par défaut
+        });
+      
+      console.log(`Estimation de gas pour addBook: ${gasEstimate}`);
+      
+      // Ajouter une marge de sécurité au gas
+      const gasToUse = Math.ceil(gasEstimate * 1.2);
+      
+      // Transaction avec paramètres explicites
+      const result = await this.contract.methods.addBook(title, author, ipfsHash)
+        .send({
+          from: this.account,
+          gas: gasToUse,
+          gasPrice: this.defaultGasPrice
+        });
+      
       console.log("Livre ajouté avec succès:", result);
+      
+      // Déclencher un événement pour informer l'application de l'ajout du livre
+      window.dispatchEvent(new CustomEvent('bookAdded', { 
+        detail: { 
+          id: result.events?.BookAdded?.returnValues?.bookId || 'nouveau',
+          title, 
+          author, 
+          ipfsHash 
+        } 
+      }));
+      
+      // Ajouter le livre aux livres en cache pour une mise à jour immédiate de l'UI
+      setTimeout(() => {
+        // Permettre à l'application de recharger les livres
+        window.dispatchEvent(new CustomEvent('refreshBooks'));
+      }, 2000);
+      
       return {
-        transactionHash: result.transactionHash,
         success: true,
-        bookId: result.events && result.events.BookAdded ? 
-                result.events.BookAdded.returnValues.bookId : 
-                null
+        transactionHash: result.transactionHash,
+        bookId: result.events?.BookAdded?.returnValues?.bookId
       };
     } catch (error) {
-      console.error("Erreur lors de l'ajout du livre:", error);
+      console.error(`Erreur lors de l'ajout du livre:`, error);
       
-      // Si l'erreur est liée au contrat ou à JSON-RPC, utiliser la solution de contournement
-      if (error.message.includes("Internal JSON-RPC error") || 
-          error.message.includes("not a function") ||
-          error.message.includes("execution reverted")) {
-        console.log("Utilisation de la solution de contournement pour l'ajout de livre...");
-        return this.simulateAddBook(title, author, ipfsHash);
+      // Analyse des erreurs spécifiques
+      if (error.message.includes("denied") || error.message.includes("rejec")) {
+        throw new Error("Transaction rejetée par l'utilisateur");
+      }
+      
+      if (error.message.includes("admin")) {
+        throw new Error("Seul l'administrateur peut ajouter des livres");
       }
       
       throw error;
@@ -1724,32 +1762,34 @@ class Web3Service {
 
   // Méthode générique pour lire une donnée du contrat (call)
   async callViewMethod(methodName, params = [], options = {}) {
-    if (!this.initialized || !this.contract) {
-      console.error("Web3Service n'est pas initialisé pour lire une donnée du contrat");
-      throw new Error("Service non initialisé");
-    }
-    
-    if (!this.contract.methods[methodName]) {
-      console.error(`La méthode ${methodName} n'existe pas dans le contrat`);
-      throw new Error(`Méthode ${methodName} non disponible`);
-    }
-    
     try {
-      // Préparation de l'appel en lecture seule
+      if (!this.isInitialized() || !this.contract) {
+        await this.initialize();
+      }
+
+      // Vérifier si la méthode existe dans le contrat
+      if (!this.contract.methods[methodName]) {
+        const error = new Error(`Méthode ${methodName} non disponible`);
+        console.warn(`La méthode ${methodName} n'existe pas dans le contrat à l'adresse ${this.contractAddress}`);
+        throw error;
+      }
+
+      // Préparer la méthode avec les paramètres fournis
       const method = this.contract.methods[methodName](...params);
       
-      // Options par défaut
-      const defaultOptions = {
-        from: this.account || '0x0000000000000000000000000000000000000000',
-      ...options
-    };
-    
-      // Exécution de l'appel
-      const result = await method.call(defaultOptions);
+      // Exécuter l'appel view (ne modifie pas l'état)
+      const result = await method.call({
+        from: this.account,
+        ...options
+      });
+
       return result;
     } catch (error) {
-      console.error(`Erreur lors de la lecture avec la méthode ${methodName}:`, error);
-      throw error;
+      if (error.message.includes('non disponible')) {
+        throw error; // Rethrow les erreurs de méthode non disponible (déjà formatées)
+      }
+      console.error(`Erreur lors de l'appel à la méthode view ${methodName}:`, error);
+      throw new Error(`Erreur lors de l'appel à la méthode ${methodName}: ${error.message}`);
     }
   }
 
@@ -1949,19 +1989,64 @@ class Web3Service {
   // Nouvelle méthode pour filtrer les livres masqués localement
   filterHiddenBooks(books) {
     try {
-      const hiddenBooks = JSON.parse(localStorage.getItem("hiddenBooks") || "[]");
+      // Si aucun livre, retourner un tableau vide
+      if (!books || !Array.isArray(books) || books.length === 0) {
+        console.warn("Aucun livre à filtrer");
+        return [];
+      }
+      
+      console.log(`Filtrage des livres masqués sur ${books.length} livres`);
+      
+      // Récupérer la liste des livres masqués du localStorage
+      let hiddenBooks = [];
+      try {
+        const hiddenBooksJson = localStorage.getItem("hidden_books");
+        hiddenBooks = hiddenBooksJson ? JSON.parse(hiddenBooksJson) : [];
+      } catch (parseError) {
+        console.error("Erreur lors de la récupération des livres masqués:", parseError);
+        hiddenBooks = [];
+      }
+      
       if (hiddenBooks.length === 0) {
+        console.log("Aucun livre masqué trouvé, affichage de tous les livres");
         return books; // Pas de livres masqués, retourner la liste complète
       }
       
-      const hiddenIds = hiddenBooks.map(book => book.id);
-      console.log(`Filtrage de ${hiddenIds.length} livres masqués localement`);
+      // Extraire les IDs des livres masqués (s'assurer qu'ils sont bien des nombres)
+      const hiddenIds = hiddenBooks.map(book => Number(book.id));
+      console.log(`${hiddenIds.length} livres masqués trouvés:`, hiddenIds);
       
       // Filtrer les livres masqués de la liste
-      return books.filter(book => !hiddenIds.includes(parseInt(book.id)));
+      const filteredBooks = books.filter(book => {
+        const bookId = Number(book.id);
+        const isHidden = hiddenIds.includes(bookId);
+        if (isHidden) {
+          console.log(`Livre masqué filtré: ${bookId} - ${book.title}`);
+        }
+        return !isHidden;
+      });
+      
+      console.log(`${filteredBooks.length}/${books.length} livres visibles après filtrage`);
+      return filteredBooks;
     } catch (error) {
       console.warn("Erreur lors du filtrage des livres masqués:", error);
       return books; // Retourner la liste originale en cas d'erreur
+    }
+  }
+  
+  // Méthode pour vérifier si un livre est masqué localement
+  isBookHiddenLocally(bookId) {
+    try {
+      const hiddenBooksJson = localStorage.getItem("hidden_books");
+      if (!hiddenBooksJson) return false;
+      
+      const hiddenBooks = JSON.parse(hiddenBooksJson);
+      const numBookId = Number(bookId);
+      
+      return hiddenBooks.some(book => Number(book.id) === numBookId);
+    } catch (error) {
+      console.error("Erreur lors de la vérification du statut masqué:", error);
+      return false;
     }
   }
   
@@ -2155,36 +2240,66 @@ class Web3Service {
         return bookFromBlockchain;
       }
       
-      // Récupérer les métadonnées complètes depuis IPFS
+      // Récupérer les métadonnées complètes depuis IPFS avec un timeout et gestion d'erreur
       console.log(`Récupération des métadonnées IPFS pour le livre ${bookId}: ${bookFromBlockchain.ipfsHash}`);
-      const ipfsMetadata = await ipfsService.getBookMetadata(bookFromBlockchain.ipfsHash);
       
-      if (!ipfsMetadata) {
-        console.warn(`Impossible de récupérer les métadonnées IPFS pour le livre ${bookId}`);
-        return bookFromBlockchain;
+      // Utiliser un Promise avec timeout pour éviter de bloquer indéfiniment
+      const ipfsMetadata = await Promise.race([
+        ipfsService.getBookMetadata(bookFromBlockchain.ipfsHash),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Délai d'attente dépassé pour IPFS")), 10000)
+        )
+      ]).catch(error => {
+        console.warn(`Timeout ou erreur lors de la récupération IPFS pour le livre ${bookId}:`, error.message);
+        return null;
+      });
+      
+      // Si les métadonnées sont disponibles, les fusionner avec les données blockchain
+      if (ipfsMetadata) {
+        // Fusionner les données de la blockchain avec les métadonnées IPFS
+        const completeBook = {
+          ...bookFromBlockchain,
+          // Ajouter les champs des métadonnées IPFS
+          category: ipfsMetadata.category || bookFromBlockchain.category,
+          description: ipfsMetadata.description || '',
+          isbn: ipfsMetadata.isbn || '',
+          pageCount: ipfsMetadata.pageCount || bookFromBlockchain.pageCount,
+          publishedDate: ipfsMetadata.publishedDate || '',
+          price: ipfsMetadata.price || '0',
+          // URLs d'images et de PDF
+          coverImageUrl: ipfsMetadata.coverImageUrl || null,
+          coverImageHash: ipfsMetadata.coverImageHash || null,
+          pdfUrl: ipfsMetadata.pdfUrl || null,
+          pdfHash: ipfsMetadata.pdfHash || null
+        };
+        
+        console.log(`Livre complet récupéré pour ID ${bookId}`);
+        return completeBook;
+      } else {
+        // Si les métadonnées ne sont pas disponibles, retourner les données de base avec flag
+        console.warn(`Métadonnées IPFS non disponibles pour le livre ${bookId}, utilisation des données blockchain uniquement`);
+        return {
+          ...bookFromBlockchain,
+          metadataError: true,
+          // Ajouter le hash de l'image pour permettre la récupération alternative
+          coverImageHash: bookFromBlockchain.ipfsHash // Utiliser le hash IPFS comme hash d'image de secours
+        };
       }
-      
-      // Fusionner les données de la blockchain avec les métadonnées IPFS
-      const completeBook = {
-        ...bookFromBlockchain,
-        // Ajouter les champs des métadonnées IPFS
-        category: ipfsMetadata.category || bookFromBlockchain.category,
-        description: ipfsMetadata.description || '',
-        isbn: ipfsMetadata.isbn || '',
-        pageCount: ipfsMetadata.pageCount || bookFromBlockchain.pageCount,
-        publishedDate: ipfsMetadata.publishedDate || '',
-        price: ipfsMetadata.price || '0',
-        // URLs d'images et de PDF
-        coverImageUrl: ipfsMetadata.coverImageUrl || null,
-        coverImageHash: ipfsMetadata.coverImageHash || null,
-        pdfUrl: ipfsMetadata.pdfUrl || null,
-        pdfHash: ipfsMetadata.pdfHash || null
-      };
-      
-      console.log(`Livre complet récupéré pour ID ${bookId}:`, completeBook);
-      return completeBook;
     } catch (error) {
       console.error(`Erreur lors de la récupération complète du livre ${bookId}:`, error);
+      // Essayer de récupérer au moins les données blockchain de base
+      try {
+        const basicBookData = await this.getBook(bookId);
+        if (basicBookData) {
+          console.warn(`Retour des données blockchain de base pour le livre ${bookId}`);
+          return {
+            ...basicBookData,
+            metadataError: true
+          };
+        }
+      } catch (fallbackError) {
+        console.error("Échec de la récupération de secours du livre:", fallbackError);
+      }
       return null;
     }
   }
@@ -2203,20 +2318,44 @@ class Web3Service {
       console.log(`Récupération des métadonnées complètes pour ${basicBooks.length} livres...`);
       
       // Pour chaque livre, récupérer les métadonnées complètes
-      const completeBooks = await Promise.all(
+      // Utiliser Promise.allSettled pour éviter que la totalité échoue si un livre échoue
+      const completeBookResults = await Promise.allSettled(
         basicBooks.map(async (basicBook) => {
-          return await this.getLivre(basicBook.id);
+          try {
+            return await this.getLivre(basicBook.id);
+          } catch (error) {
+            console.warn(`Erreur lors de la récupération du livre ${basicBook.id}:`, error);
+            // Renvoyer le livre de base avec un flag d'erreur
+            return { ...basicBook, metadataError: true };
+          }
         })
       );
       
-      // Filtrer les livres nuls (en cas d'erreur)
-      const validBooks = completeBooks.filter(book => book !== null);
+      // Traiter les résultats pour inclure seulement les livres réussis ou avec des métadonnées partielles
+      const validBooks = completeBookResults
+        .filter(result => result.status === 'fulfilled' && result.value !== null)
+        .map(result => result.value);
       
-      console.log(`${validBooks.length} livres complets récupérés avec succès`);
+      console.log(`${validBooks.length}/${basicBooks.length} livres complets récupérés avec succès`);
+      
+      // Si aucun livre n'a pu être récupéré avec les métadonnées, retourner les livres de base
+      if (validBooks.length === 0 && basicBooks.length > 0) {
+        console.warn("Impossible de récupérer les métadonnées IPFS, retour aux données de base");
+        return basicBooks;
+      }
+      
       return validBooks;
     } catch (error) {
       console.error("Erreur lors de la récupération de tous les livres:", error);
-      return [];
+      // En cas d'erreur globale, essayer de retourner la liste de base des livres
+      try {
+        const fallbackBooks = await this.getBooks();
+        console.warn("Utilisation des données de secours pour les livres");
+        return fallbackBooks || [];
+      } catch (fallbackError) {
+        console.error("Échec du plan de secours pour les livres:", fallbackError);
+        return [];
+      }
     }
   }
 
@@ -2574,76 +2713,85 @@ class Web3Service {
   
   // Solution finale: mode hors-ligne pour éviter complètement les problèmes MetaMask
   async hideBookLocally(bookId) {
+    console.log(`Masquage local du livre avec ID: ${bookId}`);
+    
     try {
-      console.log(`Mode hors-ligne: masquage local du livre ID:${bookId}`);
+      // Récupérer les données du livre avant de le masquer
+      const book = await this.getBook(bookId);
       
-      // Convertir l'ID
-      const bookIdNumber = parseInt(bookId);
-      if (isNaN(bookIdNumber) || bookIdNumber <= 0) {
-        throw new Error("ID de livre invalide");
+      if (!book) {
+        throw new Error(`Le livre avec l'ID ${bookId} n'existe pas ou n'a pas pu être récupéré`);
       }
       
-      // Obtenir les détails du livre
-      let book = null;
-      try {
-        book = await this.getBook(bookIdNumber);
-      } catch (error) {
-        console.warn("Erreur lors de la récupération du livre, utilisation des données minimales", error);
-      }
+      console.log(`Livre à masquer trouvé: ${book.title} (${book.id})`);
       
-      // Créer l'entrée pour les livres masqués
-      const hiddenBook = {
-        id: bookIdNumber,
-        title: book?.title || `Livre #${bookIdNumber}`,
-        author: book?.author || "Inconnu",
-        hiddenAt: new Date().toISOString(),
-        hiddenBy: this.account,
-        reason: "Masqué par l'administrateur en mode hors-ligne"
-      };
-      
-      // Enregistrer dans localStorage
+      // Récupérer les livres masqués actuels
+      let hiddenBooks = [];
       try {
-        // 1. Récupérer la liste actuelle des livres masqués
-        const hiddenBooks = JSON.parse(localStorage.getItem("hiddenBooks") || "[]");
-        
-        // 2. Vérifier si ce livre est déjà masqué
-        const existingIndex = hiddenBooks.findIndex(item => item.id === bookIdNumber);
-        if (existingIndex >= 0) {
-          hiddenBooks[existingIndex] = hiddenBook;
-        } else {
-          hiddenBooks.push(hiddenBook);
+        const hiddenBooksJson = localStorage.getItem("hidden_books");
+        if (hiddenBooksJson) {
+          hiddenBooks = JSON.parse(hiddenBooksJson);
         }
-        
-        // 3. Sauvegarder la liste mise à jour
-        localStorage.setItem("hiddenBooks", JSON.stringify(hiddenBooks));
-        
-        // 4. Déclencher un événement pour notifier l'UI
-        window.dispatchEvent(new CustomEvent('bookHidden', {
-          detail: { book: hiddenBook }
-        }));
-        
-        console.log(`Livre ${bookIdNumber} masqué localement avec succès`);
-        
+      } catch (parseError) {
+        console.warn("Erreur de parsing des livres masqués, réinitialisation:", parseError);
+        hiddenBooks = [];
+      }
+      
+      // Vérifier si le livre est déjà masqué
+      const bookIdNum = Number(bookId);
+      if (hiddenBooks.some(hb => Number(hb.id) === bookIdNum)) {
+        console.log(`Le livre ${bookId} est déjà masqué`);
         return {
           success: true,
-          method: "offlineMode",
-          hiddenBook,
-          message: "Le livre a été masqué dans l'interface. La suppression blockchain sera effectuée plus tard."
+          message: "Ce livre est déjà masqué",
+          alreadyHidden: true
         };
-      } catch (storageError) {
-        console.error("Erreur localStorage:", storageError);
-        throw new Error("Impossible de masquer le livre localement");
       }
+      
+      // Ajouter le livre aux masqués
+      const hiddenBook = {
+        id: bookIdNum,
+        title: book.title,
+        author: book.author,
+        ipfsHash: book.ipfsHash,
+        hiddenAt: new Date().toISOString(),
+        hiddenBy: this.account || "unknown"
+      };
+      
+      hiddenBooks.push(hiddenBook);
+      
+      // Sauvegarder dans localStorage
+      localStorage.setItem("hidden_books", JSON.stringify(hiddenBooks));
+      
+      console.log(`Livre ${bookId} masqué avec succès, total: ${hiddenBooks.length}`);
+      
+      // Émettre un événement pour informer l'interface
+      window.dispatchEvent(new CustomEvent('bookHidden', {
+        detail: {
+          bookId: bookId,
+          title: book.title
+        }
+      }));
+      
+      // Après un masquage réussi, forcer un rafraîchissement de la liste
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('refreshBooks'));
+      }, 500);
+      
+      return {
+        success: true,
+        message: `Le livre "${book.title}" a été masqué avec succès`
+      };
     } catch (error) {
       console.error("Erreur lors du masquage local:", error);
-      throw error;
+      throw new Error(`Impossible de masquer le livre: ${error.message}`);
     }
   }
   
   // Fonction pour vérifier si un livre est masqué localement
   isBookHiddenLocally(bookId) {
     try {
-      const hiddenBooks = JSON.parse(localStorage.getItem("hiddenBooks") || "[]");
+      const hiddenBooks = JSON.parse(localStorage.getItem("hidden_books") || "[]");
       return hiddenBooks.some(book => book.id === parseInt(bookId));
     } catch (error) {
       console.error("Erreur lors de la vérification des livres masqués:", error);

@@ -177,28 +177,40 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     }
     setIsLoading(true);
     try {
+      // Uploader d'abord sur IPFS
       const hash = await uploadToIPFS();
-      if (hash) {
+      if (!hash) {
         setNotification({ 
-          message: "Transaction en cours d'envoi à la blockchain... Veuillez confirmer dans MetaMask", 
-          type: "info" 
+          message: "Impossible de télécharger le livre sur IPFS. Veuillez réessayer.", 
+          type: "error" 
         });
-        
-        // Appel à addBook avec les paramètres exacts attendus par le contrat: titre, auteur, ipfsHash
-        await web3Service.addBook(
-          newBook.title, 
-          newBook.author, 
-          hash // Hash IPFS généré
-        );
-        
+        return;
+      }
+      
+      setNotification({ 
+        message: "Transaction en cours d'envoi à la blockchain... Veuillez confirmer dans MetaMask", 
+        type: "info" 
+      });
+      
+      // Appel à addBook avec les paramètres exacts attendus par le contrat: titre, auteur, ipfsHash
+      const result = await web3Service.addBook(
+        newBook.title, 
+        newBook.author, 
+        hash // Hash IPFS généré
+      );
+      
+      console.log("Résultat de l'ajout du livre:", result);
+      
+      if (result && result.success) {
         setNotification({ 
-          message: 'Livre ajouté avec succès à la blockchain! Vous pouvez maintenant le voir dans le catalogue.', 
+          message: `Livre ajouté avec succès à la blockchain! ID: ${result.bookId || 'Nouveau'}`, 
           type: 'success' 
         });
         
         // Déclencher un événement pour informer les autres composants qu'un livre a été ajouté
         window.dispatchEvent(new CustomEvent('bookAdded', {
           detail: {
+            id: result.bookId,
             title: newBook.title,
             author: newBook.author,
             ipfsHash: hash,
@@ -211,7 +223,18 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
           }
         }));
         
+        // Réinitialiser le formulaire après ajout réussi
         resetForm();
+        
+        // Actualiser la liste des livres après un court délai
+        setTimeout(() => {
+          loadBooks();
+        }, 1000);
+      } else {
+        setNotification({ 
+          message: "L'ajout du livre a échoué pour une raison inconnue", 
+          type: "error" 
+        });
       }
     } catch (error) {
       console.error("Erreur détaillée:", error);
