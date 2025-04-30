@@ -1,11 +1,10 @@
 import React from 'react';
-import Web3Service from '../../services/Web3Service';
+import web3Service from '../../services/Web3Service';
 
 // Composant de bouton de test pour modifier la réputation (admin uniquement)
 const TestButton = ({ userReputation }) => {
   const handleTestReputation = async () => {
     try {
-      const web3Service = new Web3Service();
       await web3Service.initialize();
       
       // Tester si l'utilisateur est administrateur

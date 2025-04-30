@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import './App.css';
 import web3Service from './services/Web3Service';
 import ipfsService from './services/IPFSService';
 import LibraryDAppABI from './LibraryDAppABI.json';
@@ -62,6 +63,13 @@ const App = () => {
                 const reputation = await web3Service.getUserReputation();
                 setUserReputation(Number(reputation));
                 console.log("Réputation utilisateur:", reputation);
+                
+                // Si l'utilisateur est sur la page d'inscription mais est déjà inscrit, 
+                // le rediriger vers le dashboard
+                if (activeTab === 'login') {
+                  console.log("Utilisateur déjà inscrit, redirection vers le dashboard...");
+                  setActiveTab('dashboard');
+                }
               }
             }
           } else {
@@ -109,6 +117,15 @@ const App = () => {
     // Ajouter un écouteur pour l'événement personnalisé d'ouverture de l'onglet d'inscription
     const openLoginTabHandler = () => {
       console.log("Ouverture de l'onglet d'inscription depuis une carte de livre");
+      
+      // Vérifier si l'utilisateur est déjà inscrit avant de rediriger vers login
+      if (isRegistered) {
+        console.log("L'utilisateur est déjà inscrit, redirection vers le catalogue...");
+        showNotification("Vous êtes déjà inscrit et pouvez emprunter des livres", "info");
+        setActiveTab('catalog');
+        return;
+      }
+      
       setActiveTab('login');
     };
     
@@ -149,7 +166,7 @@ const App = () => {
       window.removeEventListener('openLoginTab', openLoginTabHandler);
       window.removeEventListener('userRegistered', userRegisteredHandler);
     };
-  }, []);
+  }, [isRegistered, activeTab]);
   
   // Écouteur pour les événements de mise à jour de réputation
   useEffect(() => {
@@ -230,6 +247,12 @@ const App = () => {
           const reputation = await web3Service.getUserReputation();
           setUserReputation(Number(reputation));
           showNotification("Compte inscrit trouvé. Réputation: " + reputation, "success");
+          
+          // Si l'utilisateur est sur la page d'inscription mais est déjà inscrit,
+          // le rediriger vers le dashboard
+          if (activeTab === 'login') {
+            setActiveTab('dashboard');
+          }
         } else {
           showNotification("Ce compte n'est pas encore inscrit. Veuillez vous inscrire.", "warning");
           // Rediriger vers la page d'inscription
@@ -433,6 +456,9 @@ const App = () => {
           console.log("Réputation utilisateur:", reputation);
           setUserReputation(Number(reputation));
           showNotification("Connexion réussie à votre portefeuille", "success");
+          
+          // Rediriger vers le dashboard directement si déjà inscrit
+          setActiveTab('dashboard');
         } else {
           showNotification("Veuillez vous inscrire pour utiliser toutes les fonctionnalités", "warning");
           // Rediriger automatiquement vers la page d'inscription
@@ -476,6 +502,9 @@ const App = () => {
                 const reputation = await web3Service.getUserReputation();
                 setUserReputation(Number(reputation));
                 showNotification("Connexion réussie (mode manuel)", "success");
+                
+                // Rediriger vers le dashboard directement si déjà inscrit
+                setActiveTab('dashboard');
               } else {
                 showNotification("Veuillez vous inscrire pour utiliser l'application", "warning");
                 setActiveTab('login');
@@ -554,9 +583,35 @@ const App = () => {
 
     try {
       setIsLoading(true);
+      // Récupérer les détails du livre avant l'emprunt
+      const bookDetails = await web3Service.getBook(bookId);
+      if (!bookDetails) {
+        showNotification("Impossible de récupérer les détails du livre", "error");
+        return false;
+      }
+      
+      // Effectuer l'emprunt
       const success = await web3Service.borrowBook(bookId);
+      
       if (success) {
         showNotification("Livre emprunté avec succès!", "success");
+        
+        // Informer l'utilisateur qu'il peut télécharger le livre depuis son espace personnel
+        if (bookDetails.pdfHash) {
+          showNotification("Vous pouvez télécharger ce livre depuis Mon Espace", "info");
+        }
+        
+        // Mettre à jour le tableau des emprunts
+        window.dispatchEvent(new CustomEvent('bookBorrowed', {
+          detail: {
+            bookId: bookId,
+            bookDetails: bookDetails
+          }
+        }));
+        
+        // Rediriger vers Mon Espace après l'emprunt
+        setActiveTab('dashboard');
+        
         return true;
       } else {
         showNotification("Échec de l'emprunt du livre", "error");
@@ -679,7 +734,7 @@ const App = () => {
   }, [handleBookUpdateEvent]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="app min-h-screen flex flex-col bg-gray-50">
       <Header 
         activeTab={activeTab} 
         setActiveTab={handleTabChange}
@@ -714,6 +769,7 @@ const App = () => {
           userReputation={userReputation}
           isConnected={isConnected}
           isRegistered={isRegistered}
+          account={account}
         />}
         {activeTab === 'admin' && <AdminTab 
           setNotification={showNotification} 
