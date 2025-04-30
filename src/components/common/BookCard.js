@@ -194,7 +194,7 @@ const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, is
                   disabled={isLoading}
                 >
                   {isLoading ? 'En cours...' : 'Emprunter'}
-                  {!isLoading && <Download size={14} className="ml-1" />}
+                  {!isLoading && <Download size={16} className="ml-2" />}
                 </button>
               )}
             </>

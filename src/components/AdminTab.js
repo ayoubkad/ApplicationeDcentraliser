@@ -555,7 +555,6 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       }
 
       // Appeler le contrat pour restaurer le livre (si nécessaire)
-      const web3Service = new Web3Service();
       await web3Service.restoreHiddenBook(bookId);
 
       // Mettre à jour le stockage local

@@ -24,8 +24,419 @@ class IPFSService {
       debug: true // Activer le mode debug pour le suivi des erreurs
     };
 
+    // Configurations centralisées pour les passerelles IPFS
+    this.IPFS_GATEWAYS = [
+      'https://ipfs.io/ipfs/',
+      'https://cloudflare-ipfs.com/ipfs/',
+      'https://dweb.link/ipfs/',
+      'https://gateway.pinata.cloud/ipfs/',
+      'https://nftstorage.link/ipfs/',
+      'https://gateway.ipfs.io/ipfs/',
+      'https://ipfs.fleek.co/ipfs/',
+      'https://ipfs.eth.aragon.network/ipfs/',
+      'https://cf-ipfs.com/ipfs/',
+      'https://ipfs.best-practice.se/ipfs/'
+    ];
+
+    this.DEFAULT_TIMEOUT = 60000; // 60 secondes au lieu de 20 secondes
+    
     // Sélectionner la configuration initiale
     this.currentConfig = this.getCurrentConfig();
+  }
+
+  // Validation du CID (Content ID) IPFS
+  isValidCid(cid) {
+    if (!cid) return false;
+    // Accepter les CID v0 (commence par Qm) et v1 (commence par bafy) et autres formats valides
+    return /^Qm[1-9A-Za-z]{44}$/.test(cid) || 
+           /^bafy[1-9A-Za-z]{58}$/.test(cid) ||
+           /^[a-zA-Z0-9]{46,59}$/.test(cid); // Pour accepter d'autres formats valides
+  }
+
+  // Téléchargement optimisé d'un PDF depuis IPFS avec gestion des erreurs et timeout
+  async downloadPdfFromIPFS(cid) {
+    if (!this.isValidCid(cid)) {
+      this.log(`CID IPFS invalide: ${cid}`, 'error');
+      throw new Error('CID IPFS invalide');
+    }
+
+    const controller = new AbortController();
+    
+    // Fonction pour créer une promesse avec timeout et progression
+    const createTimeoutPromise = (ms, onProgress) => {
+      return new Promise((_, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error('Timeout - Le téléchargement a pris trop de temps'));
+        }, ms);
+        
+        // Mettre à jour la progression toutes les 2 secondes
+        if (onProgress) {
+          let elapsed = 0;
+          const interval = setInterval(() => {
+            elapsed += 2000;
+            const progress = Math.min(95, Math.floor((elapsed / ms) * 100));
+            onProgress(progress);
+            if (elapsed >= ms) clearInterval(interval);
+          }, 2000);
+          
+          // Nettoyer l'intervalle si le timeout est annulé
+          // Fix: Dans certains environnements, timer est un nombre et non un objet
+          // On crée donc un objet wrapper pour stocker les références
+          const timerWrapper = {
+            id: timer,
+            unref: () => {
+              clearInterval(interval);
+              clearTimeout(timer);
+            }
+          };
+          
+          return timerWrapper;
+        }
+        
+        // Si pas de onProgress, créer quand même un wrapper avec unref
+        return {
+          id: timer,
+          unref: () => {
+            clearTimeout(timer);
+          }
+        };
+      });
+    };
+
+    // Fonction pour signaler la progression du téléchargement
+    const onProgressUpdate = (progress) => {
+      if (window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('ipfsDownloadProgress', {
+          detail: { cid, progress }
+        }));
+      }
+      this.log(`Téléchargement en cours: ${progress}%`, 'info');
+    };
+
+    let timeoutTimer;
+    
+    try {
+      let lastError;
+      
+      // Ajouter la passerelle locale en premier dans la liste des passerelles à essayer
+      const allGateways = [`${this.currentConfig.gateway}/ipfs/`, ...this.IPFS_GATEWAYS];
+      
+      // Ajouter des proxys CORS pour contourner les erreurs CORS
+      const corsProxies = [
+        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        (url) => `https://cors-anywhere.herokuapp.com/${url}`
+      ];
+      
+      // D'abord essayer les passerelles directes
+      for (const gateway of allGateways) {
+        try {
+          const url = `${gateway}${cid}`;
+          this.log(`Tentative avec la passerelle: ${url}`);
+          
+          // Créer la promesse de timeout avec suivi de progression
+          timeoutTimer = createTimeoutPromise(this.DEFAULT_TIMEOUT, onProgressUpdate);
+          
+          const fetchPromise = fetch(url, {
+            signal: controller.signal,
+            headers: { 
+              'Accept': 'application/pdf,application/octet-stream',
+              'Cache-Control': 'no-cache'
+            }
+          });
+
+          // Utiliser Promise.race pour comparer la réponse ou le timeout
+          const response = await Promise.race([fetchPromise, timeoutTimer]);
+          
+          // Annuler le timer de timeout si la réponse arrive à temps
+          if (timeoutTimer && timeoutTimer.unref) timeoutTimer.unref();
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          
+          // Vérifier le type de contenu, mais accepter les types génériques aussi
+          const contentType = response.headers.get('content-type');
+          if (contentType && 
+              !contentType.includes('pdf') && 
+              !contentType.includes('octet-stream') && 
+              !contentType.includes('binary')) {
+            this.log(`Type de contenu non-PDF: ${contentType}`, 'warn');
+            throw new Error('Le contenu récupéré ne semble pas être un PDF');
+          }
+          
+          // Télécharger le blob avec suivi de progression si possible
+          let pdfBlob;
+          if (response.body && typeof response.body.getReader === 'function') {
+            // Utiliser l'API ReadableStream pour suivre la progression
+            const reader = response.body.getReader();
+            const contentLength = response.headers.get('Content-Length') || 0;
+            let receivedLength = 0;
+            const chunks = [];
+            
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              chunks.push(value);
+              receivedLength += value.length;
+              
+              // Mettre à jour la progression si Content-Length est disponible
+              if (contentLength > 0) {
+                const progress = Math.min(98, Math.floor((receivedLength / contentLength) * 100));
+                onProgressUpdate(progress);
+              }
+            }
+            
+            // Concaténer les chunks en un seul Uint8Array
+            const chunksAll = new Uint8Array(receivedLength);
+            let position = 0;
+            for (const chunk of chunks) {
+              chunksAll.set(chunk, position);
+              position += chunk.length;
+            }
+            
+            // Convertir en blob
+            pdfBlob = new Blob([chunksAll], { type: 'application/pdf' });
+          } else {
+            // Fallback au téléchargement standard
+            pdfBlob = await response.blob();
+          }
+          
+          // Signal 100% de progression
+          onProgressUpdate(100);
+          
+          // Tenter la vérification d'intégrité lorsque possible
+          try {
+            const isVerified = await this.verifyIpfsIntegrity(pdfBlob, cid);
+            if (isVerified) {
+              this.log(`Intégrité du PDF vérifiée avec succès pour ${cid}`, 'info');
+            }
+          } catch (verifyError) {
+            this.log(`Avertissement: Impossible de vérifier l'intégrité: ${verifyError.message}`, 'warn');
+            // Continuer même si la vérification échoue
+          }
+          
+          this.log(`PDF récupéré avec succès depuis ${url}`);
+          return { cid, blob: pdfBlob, url };
+          
+        } catch (error) {
+          // Annuler le timer de timeout en cas d'erreur
+          if (timeoutTimer && timeoutTimer.unref) timeoutTimer.unref();
+          
+          lastError = error;
+          this.log(`Échec de la passerelle ${gateway}: ${error.message}`, 'warn');
+        }
+      }
+      
+      // Si les passerelles directes échouent, essayer via proxys CORS
+      this.log('Tentative de récupération via proxys CORS...', 'info');
+      for (const corsProxy of corsProxies) {
+        for (const gateway of allGateways.slice(0, 3)) { // Limiter aux 3 premières passerelles pour les proxys
+          try {
+            const baseUrl = `${gateway}${cid}`;
+            const url = corsProxy(baseUrl);
+            this.log(`Tentative avec proxy CORS: ${url}`);
+            
+            // Créer la promesse de timeout avec suivi de progression
+            timeoutTimer = createTimeoutPromise(this.DEFAULT_TIMEOUT, onProgressUpdate);
+            
+            const fetchPromise = fetch(url, {
+              signal: controller.signal,
+              headers: { 
+                'Accept': 'application/pdf,application/octet-stream',
+                'Cache-Control': 'no-cache'
+              }
+            });
+
+            const response = await Promise.race([fetchPromise, timeoutTimer]);
+            
+            // Annuler le timer de timeout si la réponse arrive à temps
+            if (timeoutTimer && timeoutTimer.unref) timeoutTimer.unref();
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const pdfBlob = await response.blob();
+            
+            // Signal 100% de progression
+            onProgressUpdate(100);
+            
+            // Tenter la vérification d'intégrité
+            try {
+              const isVerified = await this.verifyIpfsIntegrity(pdfBlob, cid);
+              if (isVerified) {
+                this.log(`Intégrité du PDF vérifiée avec succès pour ${cid}`, 'info');
+              }
+            } catch (verifyError) {
+              this.log(`Avertissement: Impossible de vérifier l'intégrité: ${verifyError.message}`, 'warn');
+              // Continuer même si la vérification échoue
+            }
+            
+            this.log(`PDF récupéré avec succès via proxy CORS depuis ${baseUrl}`);
+            return { cid, blob: pdfBlob, url: baseUrl };
+            
+          } catch (error) {
+            // Annuler le timer de timeout en cas d'erreur
+            if (timeoutTimer && timeoutTimer.unref) timeoutTimer.unref();
+            
+            lastError = error;
+            this.log(`Échec du proxy CORS: ${error.message}`, 'warn');
+          }
+        }
+      }
+      
+      // Si on arrive ici, c'est que toutes les tentatives ont échoué
+      throw new Error(`Toutes les passerelles ont échoué : ${lastError?.message}`);
+
+    } finally {
+      // Nettoyer les timers et contrôleurs
+      if (timeoutTimer && timeoutTimer.unref) timeoutTimer.unref();
+      controller.abort(); // Annuler toutes les requêtes en cours
+    }
+  }
+
+  // Vérification d'intégrité avancée avec CID
+  async verifyIpfsIntegrity(blob, expectedCid) {
+    try {
+      // Importer dynamiquement ipfs-only-hash
+      let ipfsHash;
+      try {
+        ipfsHash = await import('ipfs-only-hash');
+      } catch (e) {
+        // Si le module n'est pas disponible, on installe le script dynamiquement
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/ipfs-only-hash/dist/index.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error("Échec du chargement de ipfs-only-hash"));
+          document.head.appendChild(script);
+        });
+        
+        // Utiliser la version globale
+        ipfsHash = window.IpfsOnlyHash;
+      }
+      
+      if (!ipfsHash || !ipfsHash.create) {
+        throw new Error("Module de hachage IPFS non disponible");
+      }
+      
+      // Calculer le hash réel du fichier
+      const buffer = await blob.arrayBuffer();
+      const actualCid = await ipfsHash.create(new Uint8Array(buffer));
+      
+      // Comparer avec le CID attendu
+      if (actualCid !== expectedCid) {
+        this.log(`Intégrité compromise! Reçu: ${actualCid}, Attendu: ${expectedCid}`, 'error');
+        throw new Error(`Intégrité compromise! Reçu: ${actualCid}, Attendu: ${expectedCid}`);
+      }
+      
+      return true;
+    } catch (error) {
+      this.log(`Erreur lors de la vérification d'intégrité: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+
+  // Déclencher le téléchargement côté client
+  triggerDownload(blob, filename = 'document.pdf') {
+    this.log(`Déclenchement du téléchargement pour ${filename}`);
+    
+    if (!blob) {
+      throw new Error('Blob invalide pour le téléchargement');
+    }
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+
+    document.body.appendChild(link);
+    link.click();
+    
+    // Nettoyage asynchrone pour éviter les fuites mémoire
+    requestAnimationFrame(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+    
+    return true;
+  }
+
+  // Nouvelle méthode optimisée pour le téléchargement de PDF
+  async downloadPDF(ipfsHash, fileName = 'document.pdf') {
+    console.log("Début du téléchargement PDF pour le hash:", ipfsHash);
+    
+    if (!ipfsHash) {
+      const error = new Error("Hash IPFS manquant pour le téléchargement");
+      this.log(error.message, 'error');
+      throw error;
+    }
+    
+    // Enlever le préfixe 'ipfs://' s'il existe
+    if (ipfsHash.startsWith('ipfs://')) {
+      ipfsHash = ipfsHash.substring(7);
+      this.log(`Préfixe 'ipfs://' supprimé, nouveau hash: ${ipfsHash}`);
+    }
+    
+    // Si le hash n'est pas valide selon notre validation, on essaie quand même mais on le log
+    if (!this.isValidCid(ipfsHash)) {
+      console.warn(`Le hash IPFS ${ipfsHash} ne semble pas être un CID valide, mais on essaie quand même`);
+    }
+    
+    this.log(`Tentative de téléchargement du PDF: ${ipfsHash}`);
+    
+    try {
+      // Utiliser la nouvelle fonction de téléchargement optimisée
+      const result = await this.downloadPdfFromIPFS(ipfsHash);
+      
+      if (!result || !result.blob) {
+        throw new Error("Échec de récupération du fichier PDF");
+      }
+      
+      // Tenter de vérifier l'intégrité du fichier, mais ne pas bloquer le téléchargement si ça échoue
+      let integrityVerified = false;
+      try {
+        integrityVerified = await this.verifyIpfsIntegrity(result.blob, ipfsHash);
+        this.log(`Vérification d'intégrité: ${integrityVerified ? 'Réussie ✓' : 'Échouée ✗'}`);
+      } catch (integrityError) {
+        // Log l'erreur mais continuer quand même
+        this.log(`Avertissement: Échec de vérification d'intégrité: ${integrityError.message}`, 'warn');
+        console.warn("Échec de vérification d'intégrité:", integrityError);
+      }
+      
+      // Déclencher le téléchargement avec la fonction optimisée
+      const downloadSucceeded = this.triggerDownload(result.blob, fileName);
+      
+      if (!downloadSucceeded) {
+        throw new Error("Échec lors du déclenchement du téléchargement");
+      }
+      
+      this.log(`Téléchargement du PDF initié avec succès depuis: ${result.url}`);
+      
+      return {
+        success: true,
+        message: "Téléchargement initié avec succès",
+        url: result.url,
+        verified: integrityVerified,
+        source: "ipfs_direct_download",
+        fileName: fileName
+      };
+      
+    } catch (error) {
+      this.log(`Erreur lors du téléchargement du PDF ${ipfsHash}: ${error.message}`, 'error');
+      console.error("Erreur détaillée:", error);
+      
+      // Créer un objet d'erreur enrichi avec des métadonnées
+      const enhancedError = new Error(`Téléchargement échoué: ${error.message}`);
+      enhancedError.originalError = error;
+      enhancedError.ipfsHash = ipfsHash;
+      enhancedError.fileName = fileName;
+      enhancedError.gateways = this.IPFS_GATEWAYS;
+      
+      // Liste de toutes les passerelles disponibles (pour utilisation en cas d'échec)
+      enhancedError.alternativeUrls = this.IPFS_GATEWAYS.map(gateway => `${gateway}${ipfsHash}`);
+      
+      throw enhancedError;
+    }
   }
 
   // Sélectionner la configuration actuelle (local ou distant)
@@ -194,18 +605,18 @@ class IPFSService {
       // Utiliser le nœud local en priorité si disponible
       `${this.currentConfig.gateway}/ipfs/${ipfsHash}`,
       // Passerelles tierces avec proxy CORS
+      `https://ipfs.io/ipfs/${ipfsHash}`,
       `https://ipfs.infura-ipfs.io/ipfs/${ipfsHash}`,
       `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
       `https://nftstorage.link/ipfs/${ipfsHash}`,
-      // API directe (si le CORS est autorisé)
-      `${this.currentConfig.apiUrl}/cat?arg=${ipfsHash}`,
-      // Méthodes de secours
+      // Passerelles Cloudflare et autres
       `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
-      `https://gateway.ipfs.io/ipfs/${ipfsHash}`
+      `https://dweb.link/ipfs/${ipfsHash}`,
+      `https://ipfs.eth.aragon.network/ipfs/${ipfsHash}`
     ];
     
-    // Utiliser la première passerelle par défaut
-    return gateways[0];
+    // Pour les téléchargements de fichiers, privilégier les passerelles les plus stables
+    return gateways[0]; // Renvoyer la passerelle la plus fiable
   }
 
   // Récupérer les métadonnées d'un livre stocké sur IPFS avec contournement CORS

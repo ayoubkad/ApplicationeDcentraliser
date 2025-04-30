@@ -282,6 +282,35 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
         return;
       }
       
+      // Vérifier d'abord si l'utilisateur est déjà inscrit
+      const isAlreadyRegistered = await web3Service.isUserRegistered();
+      if (isAlreadyRegistered) {
+        console.log("L'utilisateur est déjà inscrit (vérifié via isUserRegistered)");
+        showNotification("Vous êtes déjà inscrit! Redirection vers votre espace...", "success");
+        
+        // Récupérer la réputation de l'utilisateur
+        const reputation = await web3Service.getUserReputation();
+        console.log("Réputation de l'utilisateur déjà inscrit:", reputation);
+        
+        // Déclencher l'événement de mise à jour de réputation
+        window.dispatchEvent(new CustomEvent('reputationUpdated', { 
+          detail: { reputation: reputation } 
+        }));
+        
+        // Rediriger vers le tableau de bord après un court délai
+        setTimeout(() => {
+          if (redirectSource === 'borrow') {
+            setActiveTab('catalog');
+          } else {
+            setActiveTab('dashboard');
+          }
+        }, 1000);
+        
+        setIsSubmitting(false);
+        setIsLoading(false);
+        return;
+      }
+      
       // Étape 3: Appel au contrat pour l'inscription
       setCurrentStep('registering');
       showNotification("Vérification et enregistrement sur la blockchain...", "info");
@@ -291,6 +320,35 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
       console.log("Compte utilisé pour l'inscription:", currentAccount);
       
       const result = await web3Service.registerUser(userName, parseInt(userRole));
+      
+      // Vérifier si l'utilisateur est déjà inscrit (nouvelle méthode)
+      if (result && result.alreadyRegistered) {
+        console.log("L'utilisateur est déjà inscrit (détecté par registerUser)");
+        showNotification("Vous êtes déjà inscrit! Redirection vers votre espace...", "success");
+        
+        // Récupérer la réputation de l'utilisateur
+        const reputation = await web3Service.getUserReputation();
+        console.log("Réputation de l'utilisateur déjà inscrit:", reputation);
+        
+        // Déclencher l'événement de mise à jour de réputation
+        window.dispatchEvent(new CustomEvent('reputationUpdated', { 
+          detail: { reputation: reputation } 
+        }));
+        
+        // Rediriger vers l'espace personnel
+        setTimeout(() => {
+          if (redirectSource === 'borrow') {
+            setActiveTab('catalog');
+          } else {
+            setActiveTab('dashboard');
+          }
+        }, 1000);
+        
+        setCurrentStep('success');
+        setIsSubmitting(false);
+        setIsLoading(false);
+        return;
+      }
       
       // Étape 4: Traitement du résultat
       setCurrentStep('success');
@@ -319,7 +377,12 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
       
       // Traitement des différents cas d'erreur selon le diagramme
       if (error.code === "USER_EXISTS" || (error.message && error.message.includes("User already exists"))) {
-        showNotification("Cet utilisateur est déjà inscrit", "error");
+        showNotification("Vous êtes déjà inscrit! Redirection vers votre espace...", "info");
+        
+        // Rediriger vers l'espace personnel
+        setTimeout(() => {
+          setActiveTab('dashboard');
+        }, 1500);
       } else if (error.code === "INVALID_ROLE" || (error.message && error.message.includes("Invalid role"))) {
         showNotification("Rôle non autorisé", "error");
       } else if (error.code === 4001) {

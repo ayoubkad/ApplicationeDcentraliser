@@ -17,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x883DAAb46546446c6644aa4026e7543aba5891D1', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x883DAAb46546446c6644aa4026e7543aba5891D1'  // Ganache - Adresse déployée
+      1337: '0x036b565EEc6813A3319EbCE9f70a0B9587Fa684B', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x036b565EEc6813A3319EbCE9f70a0B9587Fa684B'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -29,7 +29,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x883DAAb46546446c6644aa4026e7543aba5891D1';
+    this.contractAddress = '0x036b565EEc6813A3319EbCE9f70a0B9587Fa684B';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -675,14 +675,81 @@ class Web3Service {
         await this.initialize();
       }
 
-      // Vérifier d'abord si la méthode existe dans le contrat
-      if (this.contract && this.contract.methods.isUserRegistered) {
-        // Si la méthode existe, l'appeler normalement
-        return await this.callViewMethod('isUserRegistered', [this.account]);
-      } else {
-        // Utiliser une méthode alternative pour déterminer si l'utilisateur est enregistré
-        return await this.checkLocalUserRegistration();
+      // Si aucun compte n'est connecté, l'utilisateur n'est pas enregistré
+      if (!this.account) {
+        console.log("Aucun compte connecté - l'utilisateur ne peut pas être inscrit");
+        return false;
       }
+
+      // Vérifier le cache local d'abord
+      const lowerCaseAddress = this.account.toLowerCase();
+      if (this.userRegisteredCache.has(lowerCaseAddress)) {
+        const isRegistered = this.userRegisteredCache.get(lowerCaseAddress);
+        console.log(`Utilisateur ${isRegistered ? 'trouvé' : 'non trouvé'} dans le cache`);
+        return isRegistered;
+      }
+
+      // Vérifier le stockage local
+      try {
+        const storedUsers = localStorage.getItem('registeredUsers');
+        if (storedUsers) {
+          const users = JSON.parse(storedUsers);
+          if (users.includes(lowerCaseAddress)) {
+            console.log("Utilisateur trouvé dans localStorage");
+            // Mettre à jour le cache
+            this.userRegisteredCache.set(lowerCaseAddress, true);
+            return true;
+          }
+        }
+
+        // Vérifier aussi les données utilisateur spécifiques
+        const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
+        if (userData) {
+          console.log("Données utilisateur trouvées dans localStorage");
+          // Mettre à jour le cache
+          this.userRegisteredCache.set(lowerCaseAddress, true);
+          return true;
+        }
+      } catch (storageError) {
+        console.warn("Erreur lors de la vérification dans localStorage:", storageError);
+      }
+
+      // Vérifier via le contrat si disponible
+      if (this.contract && this.contract.methods.isUserRegistered) {
+        try {
+          console.log("Vérification via le contrat...");
+          const result = await this.callViewMethod('isUserRegistered', [this.account]);
+          console.log("Résultat de la vérification via contrat:", result);
+          
+          // Mettre à jour le cache avec le résultat du contrat
+          this.userRegisteredCache.set(lowerCaseAddress, result);
+          
+          // Si l'utilisateur est inscrit, mettre à jour localStorage
+          if (result) {
+            try {
+              let registeredUsers = [];
+              const storedUsers = localStorage.getItem('registeredUsers');
+              if (storedUsers) {
+                registeredUsers = JSON.parse(storedUsers);
+              }
+              if (!registeredUsers.includes(lowerCaseAddress)) {
+                registeredUsers.push(lowerCaseAddress);
+                localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+              }
+            } catch (error) {
+              console.warn("Erreur lors de la mise à jour de localStorage:", error);
+            }
+          }
+          
+          return result;
+        } catch (contractError) {
+          console.warn("Erreur lors de l'appel au contrat:", contractError);
+          // Continuer avec la vérification alternative
+        }
+      }
+
+      // Si toutes les vérifications échouent, utiliser la méthode alternative
+      return await this.checkLocalUserRegistration();
     } catch (error) {
       console.warn("Erreur lors de la vérification de l'enregistrement de l'utilisateur:", error);
       // En cas d'erreur, essayer la méthode alternative
@@ -693,10 +760,20 @@ class Web3Service {
   // Méthode alternative pour vérifier l'enregistrement de l'utilisateur
   async checkLocalUserRegistration() {
     try {
+      // Si aucun compte n'est connecté, l'utilisateur n'est pas enregistré
+      if (!this.account) {
+        console.log("Aucun compte connecté - l'utilisateur ne peut pas être inscrit");
+        return false;
+      }
+
+      const lowerCaseAddress = this.account.toLowerCase();
+
       // Vérifier d'abord le stockage local
-      const localRegistration = localStorage.getItem(`user_registered_${this.account}`);
+      const localRegistration = localStorage.getItem(`user_registered_${lowerCaseAddress}`);
       if (localRegistration === 'true') {
         console.log("Utilisateur trouvé dans le stockage local");
+        // Mettre à jour le cache
+        this.userRegisteredCache.set(lowerCaseAddress, true);
         return true;
       }
 
@@ -779,30 +856,19 @@ class Web3Service {
     // Vérifier si l'utilisateur est déjà inscrit (indépendamment du contrat)
     const lowerCaseAddress = this.account.toLowerCase();
     
-    // Vérifier le cache local
-    if (this.userRegisteredCache.has(lowerCaseAddress) && this.userRegisteredCache.get(lowerCaseAddress)) {
-      console.error("L'utilisateur est déjà inscrit (vérifié via cache)");
-      const error = new Error("User already exists");
-      error.code = "USER_EXISTS";
-      throw error;
-    }
-    
-    // Vérifier si nous avons des données d'utilisateur stockées dans localStorage
-    try {
-      const storedUsers = localStorage.getItem('registeredUsers');
-      if (storedUsers) {
-        const users = JSON.parse(storedUsers);
-        if (users.includes(lowerCaseAddress)) {
-          console.error("L'utilisateur est déjà inscrit (trouvé dans localStorage)");
-          // Mettre à jour le cache
-          this.userRegisteredCache.set(lowerCaseAddress, true);
-          const error = new Error("User already exists");
-          error.code = "USER_EXISTS";
-          throw error;
-        }
-      }
-    } catch (storageError) {
-      console.warn("Erreur lors de la vérification dans localStorage:", storageError);
+    // *** VÉRIFICATION COMPLÈTE D'INSCRIPTION ***
+    // Vérifier directement avec isUserRegistered() pour une détection cohérente
+    const isRegistered = await this.isUserRegistered();
+    if (isRegistered) {
+      console.log("L'utilisateur est déjà inscrit (détecté via isUserRegistered())");
+      
+      // Au lieu de lancer une erreur, nous retournons un objet indiquant que l'utilisateur existe déjà
+      return {
+        success: true,
+        alreadyRegistered: true,
+        userAddress: this.account,
+        message: "L'utilisateur est déjà inscrit"
+      };
     }
     
     // Si le contrat n'est pas disponible, essayer de l'initialiser
@@ -1040,6 +1106,39 @@ class Web3Service {
           console.log(`Le livre ${bookId} est masqué localement, mais récupéré pour les opérations système`);
           book.isHiddenLocally = true;
         }
+
+        // Tenter de récupérer les métadonnées IPFS si un hash est disponible
+        if (book.ipfsHash) {
+          try {
+            // Importer le service IPFS
+            const ipfsService = require('../services/IPFSService').default;
+            console.log(`Tentative de récupération des métadonnées IPFS pour le hash: ${book.ipfsHash}`);
+            
+            // Récupérer les métadonnées du livre depuis IPFS
+            const ipfsMetadata = await ipfsService.getBookMetadata(book.ipfsHash);
+            
+            if (ipfsMetadata) {
+              console.log(`Métadonnées IPFS récupérées avec succès pour le livre ${bookId}`);
+              
+              // Fusionner les métadonnées IPFS avec les données du livre
+              book.category = ipfsMetadata.category || '';
+              book.description = ipfsMetadata.description || '';
+              book.isbn = ipfsMetadata.isbn || '';
+              book.pageCount = ipfsMetadata.pageCount || '';
+              book.publishedDate = ipfsMetadata.publishedDate || '';
+              book.coverImageHash = ipfsMetadata.coverImageHash || book.ipfsHash;
+              book.pdfHash = ipfsMetadata.pdfHash || book.ipfsHash;  // Utiliser l'ipfsHash comme fallback pour le PDF
+            } else {
+              // Si les métadonnées ne sont pas récupérables, utiliser l'ipfsHash comme pdfHash par défaut
+              console.log(`Métadonnées IPFS non disponibles, utilisation de l'ipfsHash comme pdfHash pour le livre ${bookId}`);
+              book.pdfHash = book.ipfsHash;
+            }
+          } catch (ipfsError) {
+            console.warn(`Erreur lors de la récupération des métadonnées IPFS: ${ipfsError.message}`);
+            // En cas d'erreur, définir le pdfHash au ipfsHash pour permettre le téléchargement direct
+            book.pdfHash = book.ipfsHash;
+          }
+        }
         
         return book;
       } catch (error) {
@@ -1056,11 +1155,67 @@ class Web3Service {
     if (!this.initialized) await this.initialize();
     
     try {
-      return await this.contract.methods.borrowBook(bookId).send({
-        from: this.account
-      });
+      // Préparation de la transaction
+      const method = this.contract.methods.borrowBook(bookId);
+      
+      // Options par défaut pour la transaction
+      const defaultOptions = {
+        from: this.account,
+        gas: this.defaultGasLimit || 500000
+      };
+      
+      // Vérifier l'estimation de gaz pour cette transaction
+      try {
+        const gasEstimate = await method.estimateGas({from: this.account});
+        console.log(`Estimation de gaz pour l'emprunt du livre ${bookId}:`, gasEstimate);
+        
+        // Si l'estimation est proche de la limite, augmenter la limite
+        if (gasEstimate > defaultOptions.gas * 0.9) {
+          defaultOptions.gas = Math.floor(gasEstimate * 1.2); // Ajouter 20% de marge
+          console.log(`Limite de gaz ajustée pour l'emprunt:`, defaultOptions.gas);
+        }
+      } catch (estimateError) {
+        console.warn(`Impossible d'estimer le gaz pour l'emprunt du livre ${bookId}:`, estimateError);
+        // Continuer avec la valeur par défaut
+      }
+      
+      // Exécution de la transaction
+      const result = await method.send(defaultOptions);
+      
+      console.log(`Résultat de l'emprunt du livre ${bookId}:`, result);
+      return result;
     } catch (error) {
       console.error(`Erreur lors de l'emprunt du livre ${bookId}:`, error);
+      
+      // Gérer les erreurs spécifiques de MetaMask
+      if (error.code === -32603 && error.message.includes("Internal JSON-RPC error")) {
+        // Tenter d'extraire le message d'erreur interne
+        try {
+          const errorObj = JSON.parse(error.stack.match(/{.*}/s)[0]);
+          if (errorObj && errorObj.message) {
+            throw new Error(`Erreur MetaMask: ${errorObj.message}`);
+          }
+        } catch (parseError) {
+          // Si nous ne pouvons pas parser l'erreur, suggérer une solution
+          throw new Error("Erreur de transaction MetaMask. Essayez de réinitialiser votre compte dans MetaMask (Paramètres > Avancé > Réinitialiser le compte).");
+        }
+      } 
+      // Gérer l'erreur "user rejected transaction"
+      else if (error.code === 4001 || (error.message && error.message.includes("User denied"))) {
+        throw new Error("Transaction annulée par l'utilisateur");
+      }
+      // Gérer l'erreur de limite de gaz insuffisante
+      else if (error.message && error.message.toLowerCase().includes("gas")) {
+        throw new Error("Limite de gaz insuffisante. Veuillez augmenter la limite de gaz dans les options de transaction.");
+      }
+      // Gérer les erreurs spécifiques du contrat
+      else if (error.message && error.message.includes("revert LibraryDApp")) {
+        const errorMsg = error.message.match(/revert (LibraryDApp:.*?)(?:'|$)/);
+        if (errorMsg && errorMsg[1]) {
+          throw new Error(errorMsg[1]);
+        }
+      }
+      
       throw error;
     }
   }
@@ -1069,11 +1224,67 @@ class Web3Service {
     if (!this.initialized) await this.initialize();
     
     try {
-      return await this.contract.methods.returnBook(bookId).send({
-        from: this.account
-      });
+      // Préparation de la transaction
+      const method = this.contract.methods.returnBook(bookId);
+      
+      // Options par défaut pour la transaction
+      const defaultOptions = {
+        from: this.account,
+        gas: this.defaultGasLimit || 500000
+      };
+      
+      // Vérifier l'estimation de gaz pour cette transaction
+      try {
+        const gasEstimate = await method.estimateGas({from: this.account});
+        console.log(`Estimation de gaz pour le retour du livre ${bookId}:`, gasEstimate);
+        
+        // Si l'estimation est proche de la limite, augmenter la limite
+        if (gasEstimate > defaultOptions.gas * 0.9) {
+          defaultOptions.gas = Math.floor(gasEstimate * 1.2); // Ajouter 20% de marge
+          console.log(`Limite de gaz ajustée pour le retour:`, defaultOptions.gas);
+        }
+      } catch (estimateError) {
+        console.warn(`Impossible d'estimer le gaz pour le retour du livre ${bookId}:`, estimateError);
+        // Continuer avec la valeur par défaut
+      }
+      
+      // Exécution de la transaction
+      const result = await method.send(defaultOptions);
+      
+      console.log(`Résultat du retour du livre ${bookId}:`, result);
+      return result;
     } catch (error) {
       console.error(`Erreur lors du retour du livre ${bookId}:`, error);
+      
+      // Gérer les erreurs spécifiques de MetaMask
+      if (error.code === -32603 && error.message.includes("Internal JSON-RPC error")) {
+        // Tenter d'extraire le message d'erreur interne
+        try {
+          const errorObj = JSON.parse(error.stack.match(/{.*}/s)[0]);
+          if (errorObj && errorObj.message) {
+            throw new Error(`Erreur MetaMask: ${errorObj.message}`);
+          }
+        } catch (parseError) {
+          // Si nous ne pouvons pas parser l'erreur, suggérer une solution
+          throw new Error("Erreur de transaction MetaMask. Essayez de réinitialiser votre compte dans MetaMask (Paramètres > Avancé > Réinitialiser le compte).");
+        }
+      } 
+      // Gérer l'erreur "user rejected transaction"
+      else if (error.code === 4001 || (error.message && error.message.includes("User denied"))) {
+        throw new Error("Transaction annulée par l'utilisateur");
+      }
+      // Gérer l'erreur de limite de gaz insuffisante
+      else if (error.message && error.message.toLowerCase().includes("gas")) {
+        throw new Error("Limite de gaz insuffisante. Veuillez augmenter la limite de gaz dans les options de transaction.");
+      }
+      // Gérer les erreurs spécifiques du contrat
+      else if (error.message && error.message.includes("revert LibraryDApp")) {
+        const errorMsg = error.message.match(/revert (LibraryDApp:.*?)(?:'|$)/);
+        if (errorMsg && errorMsg[1]) {
+          throw new Error(errorMsg[1]);
+        }
+      }
+      
       throw error;
     }
   }
@@ -1286,14 +1497,51 @@ class Web3Service {
       
       console.log("Tentative de récupération des emprunts actifs pour:", userAddress);
       
-      // Tentative avec une limite de gas très élevée
-      const result = await this.callContractMethod('getUserActiveLoans', [userAddress], { gas: 8000000 });
+      // Appeler la méthode du contrat directement avec le bon format de paramètres
+      // Utiliser callViewMethod au lieu de callContractMethod car c'est une fonction view
+      const loanIds = await this.callViewMethod('getUserActiveLoans', [userAddress], { gas: 8000000 });
       
-      if (result === null) {
+      if (!loanIds || loanIds.length === 0) {
         return []; // Tableau vide par défaut
       }
       
-      return result;
+      console.log("IDs d'emprunts actifs récupérés:", loanIds);
+      
+      // Pour chaque ID d'emprunt, récupérer les détails
+      const loansWithDetails = await Promise.all(loanIds.map(async (loanId) => {
+        try {
+          // Récupérer les détails de l'emprunt depuis le contrat
+          const borrowDetails = await this.callViewMethod('getBorrowDetails', [loanId]);
+          
+          if (!borrowDetails) {
+            console.warn(`Aucun détail trouvé pour l'emprunt ${loanId}`);
+            return null;
+          }
+          
+          // Formatter les détails de l'emprunt en un objet utilisable
+          // Les noms de champs peuvent varier selon votre implémentation du contrat
+          const loan = {
+            id: loanId.toString(),
+            bookId: borrowDetails.bookId ? parseInt(borrowDetails.bookId) : 0,
+            borrowTime: borrowDetails.borrowTime ? new Date(parseInt(borrowDetails.borrowTime) * 1000) : new Date(),
+            dueTime: borrowDetails.dueTime ? new Date(parseInt(borrowDetails.dueTime) * 1000) : new Date(),
+            returned: borrowDetails.returned || false,
+            // Formater la date d'échéance au format YYYY-MM-DD pour l'affichage
+            dueDate: new Date(parseInt(borrowDetails.dueTime) * 1000).toISOString().split('T')[0]
+          };
+          
+          return loan;
+        } catch (error) {
+          console.error(`Erreur lors de la récupération des détails de l'emprunt ${loanId}:`, error);
+          return null;
+        }
+      }));
+      
+      // Filtrer les éléments null (emprunts n'ayant pas pu être récupérés)
+      const validLoans = loansWithDetails.filter(loan => loan !== null);
+      
+      console.log("Emprunts actifs récupérés avec succès:", validLoans);
+      return validLoans;
     } catch (error) {
       console.error('Erreur lors de la récupération des emprunts actifs:', error);
       return []; // Tableau vide par défaut
