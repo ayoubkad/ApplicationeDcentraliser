@@ -46,11 +46,92 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
 
     loadReputationFromBlockchain();
 
-    window.addEventListener('reputationUpdated', (event) => {
+    // Fonction de gestion des mises à jour de réputation
+    const handleReputationUpdate = (event) => {
       if (event.detail && !isNaN(Number(event.detail.reputation))) {
+        console.log("Mise à jour de la réputation détectée:", event.detail.reputation);
+        
+        // Forcer la mise à jour du localStorage pour éviter les désynchronisations
+        const account = web3Service.getAccount();
+        if (account) {
+          try {
+            const lowerCaseAddress = account.toLowerCase();
+            const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
+            if (userData) {
+              const user = JSON.parse(userData);
+              user.reputation = Number(event.detail.reputation);
+              localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
+            }
+          } catch (error) {
+            console.error("Erreur lors de la mise à jour du localStorage:", error);
+          }
+        }
+        
+        // Mettre à jour l'interface avec la nouvelle valeur
         setActualReputation(Number(event.detail.reputation));
+        
+        // Afficher une notification
+        const oldReputation = actualReputation;
+        const newReputation = Number(event.detail.reputation);
+        const delta = newReputation - oldReputation;
+        
+        if (delta > 0) {
+          toast.success(`Félicitations! Votre réputation a augmenté: +${delta} points`, {
+            duration: 4000,
+            icon: '⭐'
+          });
+        }
       }
-    });
+    };
+
+    // Fonction spécifique pour la gestion des retours de livres
+    const handleBookReturned = async (event) => {
+      console.log("Livre retourné, vérification de la réputation...");
+      
+      // Attendre un moment pour que la blockchain se mette à jour
+      setTimeout(async () => {
+        try {
+          // Récupérer la réputation directement depuis la blockchain (ignorer le cache)
+          const newReputation = await web3Service.callViewMethod('getUserReputation', [web3Service.getAccount()]);
+          
+          if (newReputation && !isNaN(Number(newReputation))) {
+            console.log("Nouvelle réputation après retour:", newReputation);
+            
+            // Calculer le changement
+            const delta = Number(newReputation) - actualReputation;
+            
+            // Forcer la mise à jour du localStorage
+            const account = web3Service.getAccount();
+            if (account) {
+              try {
+                const lowerCaseAddress = account.toLowerCase();
+                const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
+                if (userData) {
+                  const user = JSON.parse(userData);
+                  user.reputation = Number(newReputation);
+                  localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
+                }
+              } catch (error) {
+                console.error("Erreur lors de la mise à jour du localStorage:", error);
+              }
+            }
+            
+            // Mettre à jour l'interface
+            setActualReputation(Number(newReputation));
+            
+            // Afficher une notification si la réputation a augmenté
+            if (delta > 0) {
+              toast.success(`Félicitations! Retour à temps: +${delta} points de réputation`, {
+                duration: 4000,
+                icon: '🌟'
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Erreur lors de la vérification de la réputation après retour:", error);
+        }
+      }, 1500);
+    };
 
     // Écouter les événements de visualisation PDF
     const handleOpenPdfViewer = (event) => {
@@ -65,13 +146,18 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       }
     };
 
+    // Ajouter les écouteurs d'événements
+    window.addEventListener('reputationUpdated', handleReputationUpdate);
+    window.addEventListener('bookReturned', handleBookReturned);
     window.addEventListener('openPdfViewer', handleOpenPdfViewer);
 
+    // Nettoyer les écouteurs d'événements
     return () => {
-      window.removeEventListener('reputationUpdated', () => {});
+      window.removeEventListener('reputationUpdated', handleReputationUpdate);
+      window.removeEventListener('bookReturned', handleBookReturned);
       window.removeEventListener('openPdfViewer', handleOpenPdfViewer);
     };
-  }, [userReputation]);
+  }, [userReputation, actualReputation]);
 
   useEffect(() => {
     const loadUserLoans = async () => {
@@ -291,6 +377,58 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
     setPdfViewerData(null);
   };
 
+  const handleBookReturn = async (bookId) => {
+    try {
+      // Désactiver le bouton pendant le processus de retour
+      setIsLoading(true);
+      
+      // Appeler la fonction de retour du livre
+      const result = await web3Service.returnBook(bookId);
+      
+      if (result.success) {
+        // Mettre à jour la réputation si elle a changé
+        if (result.reputation && !isNaN(Number(result.reputation))) {
+          console.log("Nouvelle réputation après retour:", result.reputation);
+          setActualReputation(Number(result.reputation));
+          
+          // Afficher un message sur le changement de réputation
+          if (result.reputationChange > 0) {
+            toast.success(`Réputation augmentée: +${result.reputationChange} points!`, {
+              duration: 3000,
+              icon: '⭐'
+            });
+          }
+        }
+        
+        // Afficher un message de succès avec toast
+        toast.success("Livre retourné avec succès!", {
+          duration: 3000,
+          icon: '📚'
+        });
+        
+        // Mettre à jour la liste des emprunts
+        setUserLoans(prevLoans => prevLoans.filter(loan => Number(loan.bookId) !== Number(bookId)));
+        
+        // Notifier le parent du retour réussi
+        if (handleReturnBook) {
+          handleReturnBook(bookId);
+        }
+      } else {
+        // Afficher un message d'erreur
+        toast.error(result.message || "Erreur lors du retour du livre", {
+          duration: 4000
+        });
+      }
+    } catch (error) {
+      console.error("Erreur lors du retour du livre:", error);
+      toast.error("Une erreur s'est produite lors du retour du livre", {
+        duration: 4000
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-[#2A3B8C] mb-6 flex items-center">
@@ -436,7 +574,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2 flex">
                         <button 
                           className="text-white bg-[#2A3B8C] hover:bg-[#1F2D6B] px-3 py-1 rounded-md transition" 
-                          onClick={() => handleReturnBook(loan.bookId)}
+                          onClick={() => handleBookReturn(loan.bookId)}
                         >
                           Retourner
                         </button>
