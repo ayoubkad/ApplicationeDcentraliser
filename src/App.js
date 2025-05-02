@@ -22,6 +22,7 @@ const App = () => {
   const [account, setAccount] = useState(null);
   const [userReputation, setUserReputation] = useState(0);
   const [isRegistered, setIsRegistered] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [notification, setNotification] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [contractInfo, setContractInfo] = useState({
@@ -733,6 +734,26 @@ const App = () => {
     };
   }, [handleBookUpdateEvent]);
 
+  // Dans les effets où vous vérifiez l'état de l'utilisateur, ajouter la vérification admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (isConnected && account) {
+        try {
+          const adminStatus = await web3Service.isAdmin();
+          setIsAdmin(adminStatus);
+          console.log("Statut admin vérifié:", adminStatus);
+        } catch (error) {
+          console.error("Erreur lors de la vérification du statut admin:", error);
+          setIsAdmin(false);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+    };
+
+    checkAdminStatus();
+  }, [isConnected, account]);
+
   return (
     <div className="app min-h-screen flex flex-col bg-gray-50">
       <Header 
@@ -749,15 +770,18 @@ const App = () => {
       />
       
       <main className="flex-grow container mx-auto px-4 py-6">
-        {activeTab === 'home' && <HomeTab 
-          setActiveTab={handleTabChange} 
-          handleBorrowBook={handleBorrowBook} 
-          isConnected={isConnected}
-          isRegistered={isRegistered}
-          account={account}
-          connectToMetaMask={connectToMetaMask}
-          disconnectWallet={disconnectWallet}
-        />}
+        {activeTab === 'home' && (
+          <HomeTab 
+            setActiveTab={handleTabChange} 
+            handleBorrowBook={handleBorrowBook}
+            isConnected={isConnected}
+            isRegistered={isRegistered}
+            account={account}
+            connectToMetaMask={connectToMetaMask}
+            disconnectWallet={disconnectWallet}
+            isAdmin={isAdmin}
+          />
+        )}
         {activeTab === 'catalog' && <CatalogTab 
           handleBorrowBook={handleBorrowBook} 
           isConnected={isConnected}

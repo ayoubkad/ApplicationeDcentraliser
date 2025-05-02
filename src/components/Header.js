@@ -132,13 +132,16 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
               <BookmarkIcon size={18} className="mr-1" />
               <span>Catalogue</span>
             </button>
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'dashboard' ? 'bg-blue-100 text-[#2A3B8C] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
-            >
-              <LayoutDashboard size={18} className="mr-1" />
-              <span>Mon Espace</span>
-            </button>
+            {/* Afficher "Mon Espace" seulement si l'utilisateur n'est pas admin */}
+            {!isAdmin && (
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'dashboard' ? 'bg-blue-100 text-[#2A3B8C] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                <LayoutDashboard size={18} className="mr-1" />
+                <span>Mon Espace</span>
+              </button>
+            )}
             {isAdmin && (
               <>
                 <button
@@ -158,14 +161,16 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
               </>
             )}
             
-            {/* Bouton S'inscrire toujours visible */}
-            <button
-              onClick={() => setActiveTab('login')}
-              className={`flex items-center px-4 py-2 rounded-md transition font-medium ${activeTab === 'login' ? 'bg-yellow-200 text-yellow-800' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}`}
-            >
-              <User size={18} className="mr-1" />
-              <span>S'inscrire</span>
-            </button>
+            {/* Bouton S'inscrire visible seulement si pas admin */}
+            {!isAdmin && (
+              <button
+                onClick={() => setActiveTab('login')}
+                className={`flex items-center px-4 py-2 rounded-md transition font-medium ${activeTab === 'login' ? 'bg-yellow-200 text-yellow-800' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}`}
+              >
+                <User size={18} className="mr-1" />
+                <span>S'inscrire</span>
+              </button>
+            )}
           </div>
 
           {/* Section connexion et compte */}
@@ -196,16 +201,21 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                             <span className="text-green-600 font-medium">Inscrit</span> : 
                             <span className="text-yellow-600 font-medium">Non inscrit</span>
                           }
+                          {isAdmin && <span className="ml-2 bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded text-xs">Admin</span>}
                         </div>
                         <hr className="my-1" />
-                        <button
-                          onClick={() => setActiveTab('dashboard')}
-                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                        >
-                          Mon Espace
-                        </button>
+                        {/* Afficher "Mon Espace" seulement si pas admin */}
+                        {!isAdmin && (
+                          <button
+                            onClick={() => setActiveTab('dashboard')}
+                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          >
+                            Mon Espace
+                          </button>
+                        )}
                         
-                        {!isRegistered && (
+                        {/* Afficher "S'inscrire" seulement si pas inscrit et pas admin */}
+                        {!isRegistered && !isAdmin && (
                           <button
                             onClick={() => setActiveTab('login')}
                             className="block w-full text-left px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
@@ -320,15 +330,18 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
               >
                 <BookmarkIcon size={18} className="mr-2" /> Catalogue
               </button>
-              <button
-                onClick={() => {
-                  setActiveTab('dashboard');
-                  setMobileMenuOpen(false);
-                }}
-                className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'dashboard' ? 'bg-blue-100 text-[#2A3B8C]' : 'text-gray-600 hover:bg-gray-100'}`}
-              >
-                <LayoutDashboard size={18} className="mr-2" /> Mon Espace
-              </button>
+              {/* Afficher "Mon Espace" seulement si pas admin */}
+              {!isAdmin && (
+                <button
+                  onClick={() => {
+                    setActiveTab('dashboard');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'dashboard' ? 'bg-blue-100 text-[#2A3B8C]' : 'text-gray-600 hover:bg-gray-100'}`}
+                >
+                  <LayoutDashboard size={18} className="mr-2" /> Mon Espace
+                </button>
+              )}
               {isAdmin && (
                 <>
                   <button
@@ -353,16 +366,18 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
               )}
               
               <div className="pt-2 border-t">
-                {/* Bouton d'inscription */}
-                <button
-                  onClick={() => {
-                    setActiveTab('login');
-                    setMobileMenuOpen(false);
-                  }}
-                  className="flex items-center justify-center w-full px-3 py-2.5 mt-2 rounded-md bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
-                >
-                  <User size={18} className="mr-2" /> S'inscrire
-                </button>
+                {/* Bouton d'inscription seulement si pas admin */}
+                {!isAdmin && (
+                  <button
+                    onClick={() => {
+                      setActiveTab('login');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="flex items-center justify-center w-full px-3 py-2.5 mt-2 rounded-md bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+                  >
+                    <User size={18} className="mr-2" /> S'inscrire
+                  </button>
+                )}
                 
                 {/* Bouton de diagnostic */}
                 <button

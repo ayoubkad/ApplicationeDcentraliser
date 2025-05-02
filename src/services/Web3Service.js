@@ -17,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x71B375CC13cc523C924e59e9ea7EA056639F808e', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x71B375CC13cc523C924e59e9ea7EA056639F808e'  // Ganache - Adresse déployée
+      1337: '0xFaefbC8B34b4E6b83b5719EFa432f21D9E0882D3', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0xFaefbC8B34b4E6b83b5719EFa432f21D9E0882D3'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -29,7 +29,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x71B375CC13cc523C924e59e9ea7EA056639F808e';
+    this.contractAddress = '0xFaefbC8B34b4E6b83b5719EFa432f21D9E0882D3';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -818,9 +818,9 @@ class Web3Service {
 
   async registerUser(name, role) {
     console.log("Tentative d'inscription avec nom:", name, "rôle:", role);
-    
+      
     // Vérifier si web3 est initialisé
-    if (!this.initialized) {
+      if (!this.initialized) {
       console.log("Web3 n'est pas initialisé, tentative d'initialisation...");
       const success = await this.initialize();
       if (!success) {
@@ -879,20 +879,20 @@ class Web3Service {
     const lowerCaseAddress = this.account.toLowerCase();
     
     // *** VÉRIFICATION COMPLÈTE D'INSCRIPTION ***
-    try {
-      const isRegistered = await this.isUserRegistered();
-      if (isRegistered) {
+      try {
+        const isRegistered = await this.isUserRegistered();
+        if (isRegistered) {
         console.log("L'utilisateur est déjà inscrit (détecté via isUserRegistered())");
         
         // Au lieu de lancer une erreur, nous retournons un objet indiquant que l'utilisateur existe déjà
-        return {
-          success: true,
+          return {
+            success: true,
           alreadyRegistered: true,
           userAddress: this.account,
           message: "L'utilisateur est déjà inscrit"
-        };
-      }
-    } catch (checkError) {
+          };
+        }
+      } catch (checkError) {
       console.warn("Erreur lors de la vérification d'inscription:", checkError);
       // Continuer malgré l'erreur, car nous ferons une vérification supplémentaire plus tard
     }
@@ -948,18 +948,18 @@ class Web3Service {
         }
         
         // Créer un événement personnalisé pour simuler l'inscription
-        window.dispatchEvent(new CustomEvent('userRegistered', { 
-          detail: { 
+            window.dispatchEvent(new CustomEvent('userRegistered', {
+              detail: {
             account: this.account,
-            name: name,
+                name: name,
             role: role,
             timestamp: Date.now()
-          }
-        }));
-        
+              }
+            }));
+            
         // Retourner un objet simulant la réponse d'une transaction
-        return {
-          success: true,
+            return {
+              success: true,
           isOfflineMode: true,
           userName: name,
           userRole: role,
@@ -985,8 +985,8 @@ class Web3Service {
           const isRegistered = await this.contract.methods.isUserRegistered(this.account).call();
           if (isRegistered) {
             console.log("L'utilisateur est déjà inscrit (vérification via contrat)");
-            return {
-              success: true,
+        return {
+          success: true,
               alreadyRegistered: true,
               userAddress: this.account,
               message: "L'utilisateur est déjà inscrit"
@@ -1002,7 +1002,7 @@ class Web3Service {
         
         // Ajouter des options explicites pour garantir le gas suffisant
         const receipt = await this.contract.methods.registerUser(name, role).send({
-          from: this.account,
+        from: this.account,
           gas: 500000,  // Limite de gas plus élevée
           gasPrice: this.web3.utils.toWei('20', 'gwei')  // Prix du gas explicite
         });
@@ -1027,7 +1027,7 @@ class Web3Service {
           // Stocker également les informations d'utilisateur
           const userData = {
             address: this.account,
-            name: name,
+          name: name,
             role: role,
             reputation: 80,
             registrationTime: Date.now(),
@@ -1039,8 +1039,8 @@ class Web3Service {
         }
         
         // Retourner un objet contenant les informations pertinentes
-        return {
-          success: true,
+      return {
+        success: true,
           transactionHash: receipt.transactionHash,
           userName: name,
           userRole: role,
@@ -1061,7 +1061,7 @@ class Web3Service {
             this.userRegisteredCache.set(lowerCaseAddress, true);
             
             // Retourner une réponse indiquant que l'utilisateur est déjà inscrit
-            return {
+        return {
               success: true,
               alreadyRegistered: true,
               userAddress: this.account,
@@ -1294,11 +1294,11 @@ class Web3Service {
       if (!this.isInitialized()) {
         await this.initialize();
       }
-
+      
       if (!this.account) {
         throw new Error("Aucun compte connecté. Veuillez vous connecter à MetaMask.");
       }
-
+      
       const book = await this.getBook(bookId);
       if (!book) {
         throw new Error(`Livre avec l'ID ${bookId} introuvable.`);
@@ -1320,7 +1320,7 @@ class Web3Service {
 
       // Préparer la transaction
       const tx = await this.contract.methods.returnBook(bookId).send({
-        from: this.account,
+            from: this.account,
         gas: 200000
       });
 
@@ -1348,16 +1348,16 @@ class Web3Service {
       }
 
       // Déclencher un événement personnalisé pour informer l'application
-      window.dispatchEvent(new CustomEvent('bookReturned', {
-        detail: {
+        window.dispatchEvent(new CustomEvent('bookReturned', {
+          detail: {
           bookId: bookId,
           bookDetails: book,
           transaction: tx,
           oldReputation: oldReputation,
           newReputation: newReputation
-        }
-      }));
-
+          }
+        }));
+      
       return {
         success: true,
         transaction: tx,
@@ -1366,8 +1366,8 @@ class Web3Service {
       };
     } catch (error) {
       console.error("Erreur lors du retour du livre:", error);
-      return {
-        success: false,
+        return {
+          success: false,
         message: error.message || "Une erreur s'est produite lors du retour du livre."
       };
     }
@@ -1399,7 +1399,7 @@ class Web3Service {
         try {
           console.log("Récupération de la réputation directement depuis la blockchain...");
           const blockchainReputation = await this.contract.methods.getUserReputation(userAddress).call({
-            from: this.account,
+        from: this.account,
             gas: 3000000
           });
           
@@ -1409,21 +1409,21 @@ class Web3Service {
           // alors on met à jour le localStorage et on retourne cette valeur
           if (blockchainReputation) {
             // Mettre à jour le localStorage avec la valeur de la blockchain
-            try {
-              const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
-              if (userData) {
-                const user = JSON.parse(userData);
+      try {
+        const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
+        if (userData) {
+          const user = JSON.parse(userData);
                 user.reputation = parseInt(blockchainReputation);
                 user.lastUpdated = Date.now();
-                localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
-              } else {
-                // Créer un nouvel enregistrement utilisateur
-                const newUser = {
-                  address: userAddress,
+          localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
+        } else {
+          // Créer un nouvel enregistrement utilisateur
+          const newUser = {
+            address: userAddress,
                   reputation: parseInt(blockchainReputation),
-                  lastUpdated: Date.now()
-                };
-                localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(newUser));
+            lastUpdated: Date.now()
+          };
+          localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(newUser));
               }
               console.log("Réputation mise à jour dans localStorage:", blockchainReputation);
             } catch (storageError) {
