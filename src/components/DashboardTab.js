@@ -16,6 +16,9 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
   const [userLoans, setUserLoans] = useState([]);
   const [loadingBooks, setLoadingBooks] = useState(true);
   const [pdfViewerData, setPdfViewerData] = useState(null);
+  const [borrowHistory, setBorrowHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [bookCache, setBookCache] = useState({});
 
   const getReputationLevel = (score) => {
     if (score >= 90) return { level: 'Premium', color: 'text-purple-600', benefits: ['Emprunts prolongés', 'Réservations prioritaires', 'Accès VIP'] };
@@ -44,7 +47,229 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       }
     };
 
+    // Fonction pour récupérer et mettre en cache les détails d'un livre
+    const getBookDetails = async (bookId) => {
+      // Si le livre est déjà en cache, retourner les données
+      if (bookCache[bookId]) {
+        return bookCache[bookId];
+      }
+
+      try {
+        // Essayer d'abord de récupérer le livre depuis le smart contract
+        let bookDetails = await web3Service.getBook(bookId);
+        
+        // Si nous n'avons pas pu récupérer le livre depuis le contrat
+        if (!bookDetails || !bookDetails.title) {
+          // Vérifier si le livre existe dans le localStorage (hors ligne)
+          try {
+            const localBooksString = localStorage.getItem('localBooks');
+            if (localBooksString) {
+              const localBooks = JSON.parse(localBooksString);
+              const localBook = localBooks.find(book => book.id.toString() === bookId.toString());
+              if (localBook) {
+                bookDetails = localBook;
+                console.log(`Livre trouvé dans le localStorage: ${localBook.title}`);
+              }
+            }
+          } catch (e) {
+            console.warn("Erreur lors de la récupération du livre depuis le localStorage:", e);
+          }
+          
+          // Si nous n'avons toujours pas trouvé le livre, utiliser les données par défaut
+          if (!bookDetails || !bookDetails.title) {
+            // Essayer de récupérer l'information "brute" depuis le contrat
+            try {
+              const rawBook = await web3Service.callViewMethod('books', [bookId], {gas: 3000000});
+              if (rawBook && rawBook.title) {
+                bookDetails = {
+                  id: bookId,
+                  title: rawBook.title || "Titre indisponible",
+                  author: rawBook.author || "Auteur indisponible",
+                  ipfsHash: rawBook.ipfsHash || null
+                };
+              }
+            } catch (rawError) {
+              console.warn(`Impossible de récupérer les données brutes du livre ${bookId}:`, rawError);
+            }
+            
+            // Si nous n'avons toujours rien, utiliser l'ID pour la référence
+            if (!bookDetails) {
+              bookDetails = {
+                id: bookId,
+                title: `Livre #${bookId}`,
+                author: "Auteur indisponible",
+                ipfsHash: null
+              };
+            }
+          }
+        }
+        
+        // Mettre à jour le cache pour les prochaines demandes
+        setBookCache(prevCache => ({
+          ...prevCache,
+          [bookId]: bookDetails
+        }));
+        
+        return bookDetails;
+      } catch (error) {
+        console.error(`Erreur lors de la récupération des détails du livre ${bookId}:`, error);
+        // Valeur par défaut en cas d'erreur
+        return {
+          id: bookId,
+          title: `Référence #${bookId}`,
+          author: "Information inaccessible",
+          ipfsHash: null
+        };
+      }
+    };
+
+    // Charger l'historique des emprunts de l'utilisateur
+    const loadBorrowHistory = async () => {
+      setLoadingHistory(true);
+      try {
+        await web3Service.initialize();
+        
+        // Récupérer l'historique des emprunts
+        const history = await web3Service.getUserBorrowHistory();
+        
+        if (history && history.length > 0) {
+          console.log("Historique brut récupéré:", history);
+          
+          // Collecter tous les IDs de livres uniques pour une récupération optimisée
+          const uniqueBookIds = [...new Set(history.map(item => item.bookId?.toString() || '0'))];
+          console.log("IDs de livres uniques à récupérer:", uniqueBookIds);
+          
+          // Précharger les livres en batch pour éviter les requêtes multiples
+          const bookDetailsPromises = uniqueBookIds.map(id => getBookDetails(id));
+          await Promise.allSettled(bookDetailsPromises);
+          
+          // Traiter l'historique avec les détails des livres
+          const historyWithDetails = await Promise.all(
+            history.map(async (historyItem) => {
+              try {
+                // Extraire les valeurs importantes de l'objet d'historique
+                const borrowId = historyItem.id || historyItem.borrowId || '0';
+                const bookId = historyItem.bookId || '0';
+                
+                // Utiliser un timestamp valide ou une date par défaut raisonnable
+                const defaultBorrowTime = new Date();
+                defaultBorrowTime.setDate(defaultBorrowTime.getDate() - 1);
+                
+                // Convertir correctement les timestamps Unix en dates
+                const borrowTime = historyItem.borrowTime && parseInt(historyItem.borrowTime) > 0 
+                  ? new Date(parseInt(historyItem.borrowTime) * 1000) 
+                  : defaultBorrowTime;
+                
+                const returnTime = historyItem.returnTime && parseInt(historyItem.returnTime) > 0
+                  ? new Date(parseInt(historyItem.returnTime) * 1000)
+                  : null;
+                
+                const isReturned = historyItem.returned || returnTime !== null;
+                
+                // Récupérer les détails du livre depuis notre cache/service
+                const bookDetails = await getBookDetails(bookId);
+                
+                // Formatage des dates avec fallback sécurisé
+                const formatDate = (date) => {
+                  if (!date) return '-';
+                  try {
+                    return date.toLocaleDateString('fr-FR', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit'
+                    });
+                  } catch (e) {
+                    return date.toLocaleDateString('fr-FR');
+                  }
+                };
+                
+                // Calcul de la durée avec une valeur maximale raisonnable
+                let duration = 0;
+                try {
+                  const endTime = returnTime || new Date();
+                  duration = Math.ceil((endTime - borrowTime) / (1000 * 60 * 60 * 24));
+                  
+                  // Si la durée est négative ou déraisonnablement grande, utiliser une valeur par défaut
+                  if (duration < 0 || duration > 1000) {
+                    duration = returnTime ? 14 : Math.ceil((new Date() - defaultBorrowTime) / (1000 * 60 * 60 * 24));
+                  }
+                } catch (e) {
+                  duration = 1; // Valeur par défaut en cas d'erreur
+                }
+                
+                return {
+                  id: borrowId.toString(),
+                  bookId: bookId.toString(),
+                  borrowTime: borrowTime,
+                  returnTime: returnTime,
+                  isReturned: isReturned,
+                  title: bookDetails?.title || `Livre #${bookId}`,
+                  author: bookDetails?.author || "Information non disponible",
+                  // Formatage des dates
+                  borrowDate: formatDate(borrowTime),
+                  returnDate: returnTime ? formatDate(returnTime) : '-',
+                  // Durée calculée avec limite raisonnable
+                  duration: duration
+                };
+              } catch (error) {
+                console.error(`Erreur lors du traitement de l'élément d'historique:`, error);
+                // Valeurs par défaut améliorées en cas d'erreur
+                const defaultDate = new Date();
+                defaultDate.setDate(defaultDate.getDate() - 7); // Une semaine par défaut
+                
+                return {
+                  id: historyItem.id || Date.now().toString(),
+                  bookId: historyItem.bookId || '0',
+                  borrowTime: defaultDate,
+                  returnTime: null,
+                  isReturned: false,
+                  title: `Référence #${historyItem.bookId || '?'}`,
+                  author: "Information non récupérable",
+                  borrowDate: defaultDate.toLocaleDateString('fr-FR'),
+                  returnDate: '-',
+                  duration: 7
+                };
+              }
+            })
+          );
+          
+          // Trier l'historique par date d'emprunt (plus récent en premier)
+          const sortedHistory = historyWithDetails.sort((a, b) => 
+            b.borrowTime - a.borrowTime
+          );
+          
+          // Validation et correction des dates
+          const validateAndFixDates = (item) => {
+            // Vérifier si la date d'emprunt est dans le futur (erreur potentielle)
+            const now = new Date();
+            if (item.borrowTime > now) {
+              console.warn(`Date d'emprunt future détectée pour le livre ${item.bookId}, correction...`);
+              // Corriger la date d'emprunt à une date plausible (aujourd'hui - durée)
+              item.borrowTime = new Date(now.getTime() - (item.duration * 24 * 60 * 60 * 1000));
+              item.borrowDate = formatDate(item.borrowTime);
+            }
+            return item;
+          };
+
+          // Appliquer la validation des dates
+          if (sortedHistory && sortedHistory.length > 0) {
+            const validatedHistory = sortedHistory.map(validateAndFixDates);
+            setBorrowHistory(validatedHistory);
+            console.log("Historique d'emprunts validé et corrigé:", validatedHistory);
+          }
+        } else {
+          setBorrowHistory([]);
+        }
+      } catch (error) {
+        console.error("Erreur lors du chargement de l'historique d'emprunts:", error);
+        setBorrowHistory([]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+
     loadReputationFromBlockchain();
+    loadBorrowHistory();
 
     // Fonction de gestion des mises à jour de réputation
     const handleReputationUpdate = (event) => {
@@ -146,15 +371,50 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       }
     };
 
+    // Écouter les événements de mise à jour pour l'historique des emprunts
+    const handleBookBorrowed = (event) => {
+      if (event.detail && event.detail.bookId && event.detail.bookDetails) {
+        const { bookId, bookDetails } = event.detail;
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 14);
+        setUserLoans(prevLoans => [
+          ...prevLoans,
+          {
+            id: Date.now(),
+            bookId,
+            title: bookDetails.title || "Livre inconnu",
+            author: bookDetails.author || "Auteur inconnu",
+            dueDate: dueDate.toISOString().split('T')[0],
+            pdfHash: bookDetails.pdfHash || null,
+            coverImageHash: bookDetails.coverImageHash || null
+          }
+        ]);
+        // Recharger l'historique après un emprunt
+        loadBorrowHistory();
+      }
+    };
+    
+    // Ajouter la fonction pour recharger l'historique après un retour
+    const handleBookReturnedHistory = (event) => {
+      // Attendre un court instant pour que la blockchain soit mise à jour
+      setTimeout(() => {
+        loadBorrowHistory();
+      }, 2000);
+    };
+
     // Ajouter les écouteurs d'événements
     window.addEventListener('reputationUpdated', handleReputationUpdate);
     window.addEventListener('bookReturned', handleBookReturned);
+    window.addEventListener('bookReturned', handleBookReturnedHistory); // Nouvel écouteur pour l'historique
+    window.addEventListener('bookBorrowed', handleBookBorrowed);
     window.addEventListener('openPdfViewer', handleOpenPdfViewer);
 
     // Nettoyer les écouteurs d'événements
     return () => {
       window.removeEventListener('reputationUpdated', handleReputationUpdate);
       window.removeEventListener('bookReturned', handleBookReturned);
+      window.removeEventListener('bookReturned', handleBookReturnedHistory); // Nettoyer l'écouteur
+      window.removeEventListener('bookBorrowed', handleBookBorrowed);
       window.removeEventListener('openPdfViewer', handleOpenPdfViewer);
     };
   }, [userReputation, actualReputation]);
@@ -196,29 +456,6 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
     };
 
     loadUserLoans();
-
-    const handleBookBorrowed = (event) => {
-      if (event.detail && event.detail.bookId && event.detail.bookDetails) {
-        const { bookId, bookDetails } = event.detail;
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 14);
-        setUserLoans(prevLoans => [
-          ...prevLoans,
-          {
-            id: Date.now(),
-            bookId,
-            title: bookDetails.title || "Livre inconnu",
-            author: bookDetails.author || "Auteur inconnu",
-            dueDate: dueDate.toISOString().split('T')[0],
-            pdfHash: bookDetails.pdfHash || null,
-            coverImageHash: bookDetails.coverImageHash || null
-          }
-        ]);
-      }
-    };
-
-    window.addEventListener('bookBorrowed', handleBookBorrowed);
-    return () => window.removeEventListener('bookBorrowed', handleBookBorrowed);
   }, []);
 
   const handleDownload = async (loan) => {
@@ -517,108 +754,375 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       </div>
 
       <div className="mb-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-800">Vos Emprunts Actifs</h2>
-          <span className="text-sm bg-[#2A3B8C]/10 text-[#2A3B8C] font-medium px-3 py-1 rounded-full">{userLoans.length} livre(s) emprunté(s)</span>
-        </div>
-        {loadingBooks ? (
-          <div className="bg-white rounded-lg shadow-md p-6 text-center">
-            <div className="animate-pulse flex space-x-4 mb-3">
-              <div className="flex-1 space-y-3 py-1">
-                <div className="h-5 bg-gray-200 rounded w-3/4 mx-auto"></div>
-                <div className="space-y-2">
-                  <div className="h-3 bg-gray-200 rounded"></div>
-                  <div className="h-3 bg-gray-200 rounded w-5/6"></div>
-                </div>
-              </div>
+        <h2 className="text-2xl font-bold text-[#2A3B8C] mb-4 flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+          Mes Livres Empruntés
+        </h2>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          {loadingBooks ? (
+            <div className="animate-pulse space-y-4">
+              <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+              <div className="h-32 bg-gray-100 rounded"></div>
             </div>
-            <p className="text-gray-500">Chargement de vos emprunts...</p>
-          </div>
-        ) : userLoans.length > 0 ? (
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-[#2A3B8C]/5">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#2A3B8C] uppercase tracking-wider">Titre</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#2A3B8C] uppercase tracking-wider">Auteur</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#2A3B8C] uppercase tracking-wider">Date limite</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#2A3B8C] uppercase tracking-wider">Statut</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#2A3B8C] uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
+          ) : userLoans.length > 0 ? (
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {userLoans.map(loan => {
                   const dueDate = new Date(loan.dueDate);
                   const today = new Date();
                   const daysLeft = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-                  let statusColor = "text-[#4CAF50] bg-[#4CAF50]/10";
-                  let statusText = `${daysLeft} jours restants`;
-                  if (daysLeft <= 2) {
-                    statusColor = "text-[#FFD700] bg-[#FFD700]/10";
-                    statusText = `${daysLeft} jour${daysLeft > 1 ? 's' : ''} - Retour imminent !`;
-                  }
-                  if (daysLeft < 0) {
-                    statusColor = "text-[#E53935] bg-[#E53935]/10";
-                    statusText = `En retard de ${Math.abs(daysLeft)} jour${Math.abs(daysLeft) > 1 ? 's' : ''} !`;
-                  }
+                  const isUrgent = daysLeft <= 2;
+                  
                   return (
-                    <tr key={loan.id} className="hover:bg-[#F8F9FA] transition">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{loan.title}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{loan.author}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{loan.dueDate}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}`}>
-                          {statusText}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2 flex">
+                    <div key={loan.id} className={`border rounded-lg overflow-hidden transition-all duration-200 ${isUrgent ? 'border-yellow-300 shadow-yellow-100 shadow-md' : 'border-gray-200'}`}>
+                      <div className="flex p-4">
+                        <div className="w-16 h-20 bg-blue-50 rounded-md flex items-center justify-center text-blue-700 mr-4 flex-shrink-0">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 text-lg line-clamp-1" title={loan.title}>{loan.title}</h3>
+                          <p className="text-gray-600 text-sm mb-2">{loan.author}</p>
+                          <div className="flex justify-between items-center">
+                            <div className={`text-xs font-medium rounded-full px-2 py-1 ${
+                              daysLeft <= 0 
+                                ? 'bg-red-100 text-red-800' 
+                                : daysLeft <= 2 
+                                  ? 'bg-yellow-100 text-yellow-800' 
+                                  : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {daysLeft <= 0 
+                                ? `En retard de ${Math.abs(daysLeft)} jour${Math.abs(daysLeft) > 1 ? 's' : ''}` 
+                                : `${daysLeft} jour${daysLeft > 1 ? 's' : ''} restant${daysLeft > 1 ? 's' : ''}`}
+                            </div>
+                            <span className="text-xs text-gray-500">Échéance: {loan.dueDate}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="border-t bg-gray-50 p-2 flex">
                         <button 
-                          className="text-white bg-[#2A3B8C] hover:bg-[#1F2D6B] px-3 py-1 rounded-md transition" 
+                          className="flex-1 text-[#2A3B8C] hover:bg-[#2A3B8C]/10 transition-colors py-1 rounded text-sm font-medium" 
                           onClick={() => handleBookReturn(loan.bookId)}
                         >
                           Retourner
                         </button>
                         {loan.pdfHash && (
                           <button 
-                            className="text-white bg-green-600 hover:bg-green-700 px-3 py-1 rounded-md transition flex items-center shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0"
+                            className="flex-1 text-green-600 hover:bg-green-50 transition-colors py-1 rounded text-sm font-medium flex items-center justify-center"
                             onClick={() => handleDownload(loan)}
-                            title="Lire le livre"
                           >
                             <Download size={14} className="mr-1" />
                             Lire
                           </button>
                         )}
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-md p-6 text-center">
-            <p className="text-gray-500">Vous n'avez pas d'emprunts actifs.</p>
-            <button
-              className="mt-4 px-4 py-2 bg-[#2A3B8C] text-white rounded-md font-medium hover:bg-[#1F2D6B] transition"
-              onClick={() => setActiveTab('catalog')}
-            >
-              Parcourir le catalogue
-            </button>
-          </div>
-        )}
+              </div>
+              
+              <div className="flex justify-end mt-4">
+                <button
+                  onClick={() => setActiveTab('catalog')}
+                  className="text-sm text-[#2A3B8C] hover:underline flex items-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Emprunter plus de livres
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <div className="inline-flex items-center justify-center p-4 bg-blue-50 rounded-full mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-800 mb-2">Aucun livre emprunté actuellement</h3>
+              <p className="text-gray-500 mb-4">Explorez notre catalogue et empruntez des livres pour les voir ici.</p>
+              <button
+                onClick={() => setActiveTab('catalog')}
+                className="inline-flex items-center px-4 py-2 bg-[#2A3B8C] text-white rounded-md hover:bg-[#1F2D6B] transition"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                Parcourir le catalogue
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Historique d'Emprunts</h2>
+        <h2 className="text-2xl font-bold text-[#2A3B8C] mb-4 flex items-center">
+          <Clock className="mr-2" /> Historique d'Emprunts
+        </h2>
         <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex justify-center">
-            <div className="text-center text-gray-500">
-              <Clock size={32} className="mx-auto mb-2 text-gray-400" />
-              <p>Votre historique d'emprunts s'affichera ici.</p>
-              <p className="text-xs mt-2 text-[#2A3B8C]">Les transactions sont enregistrées de manière transparente sur la blockchain</p>
+          {loadingHistory ? (
+            <div className="animate-pulse space-y-4">
+              <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+              <div className="h-32 bg-gray-100 rounded"></div>
             </div>
+          ) : borrowHistory.length > 0 ? (
+            <>
+              <div className="flex flex-wrap justify-between items-center mb-6">
+                <div className="flex space-x-2 my-2">
+                  <span className="text-sm bg-[#2A3B8C]/10 text-[#2A3B8C] font-medium px-3 py-1 rounded-full flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    {borrowHistory.length} emprunt{borrowHistory.length > 1 ? 's' : ''} au total
+                  </span>
+                  <span className="text-sm bg-green-100 text-green-800 font-medium px-3 py-1 rounded-full flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    {borrowHistory.filter(item => item.isReturned).length} retourné{borrowHistory.filter(item => item.isReturned).length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <div className="text-xs text-gray-500 italic">
+                    Transactions vérifiées par la blockchain
+                  </div>
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead>
+                    <tr className="bg-gradient-to-r from-[#2A3B8C]/90 to-[#2A3B8C]/80 text-white">
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Titre</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Auteur</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Emprunté le</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Retourné le</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Durée</th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {borrowHistory.map((item, index) => {
+                      // Calculer si l'emprunt est récent (moins de 3 jours)
+                      const isRecent = (new Date() - item.borrowTime) < (3 * 24 * 60 * 60 * 1000);
+                      // Calculer si le retour est récent
+                      const isRecentReturn = item.returnTime && 
+                                            ((new Date() - item.returnTime) < (3 * 24 * 60 * 60 * 1000));
+                      
+                      // Déterminer si le titre est disponible ou s'il s'agit d'une référence
+                      const isTitleReference = item.title === "Livre inconnu" || 
+                                             item.title === "Livre non disponible" || 
+                                             item.title.includes("Référence #") || 
+                                             item.title.includes("Livre #");
+                      
+                      // Déterminer si l'auteur est disponible ou non
+                      const isAuthorMissing = item.author === "Auteur inconnu" || 
+                                            item.author === "Information manquante" || 
+                                            item.author === "Information non disponible" || 
+                                            item.author === "Auteur indisponible" || 
+                                            item.author === "Information inaccessible" || 
+                                            item.author === "Information non récupérable";
+                      
+                      return (
+                        <tr key={item.id} className={`hover:bg-blue-50 transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                          <td className="px-6 py-4">
+                            {isTitleReference ? (
+                              <div className="flex items-center">
+                                <div className="h-10 w-10 flex-shrink-0 bg-gray-100 rounded-md flex items-center justify-center text-gray-400 mr-3">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </div>
+                                <div>
+                                  <div className="text-base font-medium text-gray-500 italic">
+                                    {item.title}
+                                  </div>
+                                  <div className="text-xs text-gray-400 flex items-center mt-1">
+                                    <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-xs mr-1">ID: {item.bookId}</span>
+                                    {isRecent && <span className="text-green-500 text-xs flex items-center">• <span className="ml-1">Nouveau</span></span>}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center">
+                                <div className="h-10 w-10 flex-shrink-0 bg-blue-50 rounded-md flex items-center justify-center text-blue-600 mr-3">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                  </svg>
+                                </div>
+                                <div className="flex-1">
+                                  <div className="text-base font-bold text-gray-900 hover:text-blue-700 transition-colors">
+                                    {item.title}
+                                  </div>
+                                  <div className="text-xs text-gray-500 flex items-center mt-1">
+                                    <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-xs mr-1">ID: {item.bookId}</span>
+                                    {isRecent && <span className="text-green-500 text-xs flex items-center">• <span className="ml-1">Nouveau</span></span>}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            {isAuthorMissing ? (
+                              <div className="flex items-center">
+                                <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-500 mr-2">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                  </svg>
+                                </span>
+                                <div>
+                                  <span className="text-base text-gray-400 italic block">
+                                    {item.author}
+                                  </span>
+                                  <span className="text-xs text-gray-400 mt-1 block">Information non vérifiée</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center">
+                                <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-800 mr-2">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                  </svg>
+                                </span>
+                                <div>
+                                  <span className="text-base font-semibold text-gray-700 block">
+                                    {item.author}
+                                  </span>
+                                  <span className="text-xs text-gray-500 mt-1 block">Auteur vérifié</span>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center">
+                              {isRecent && (
+                                <span className="flex h-2 w-2 mr-2">
+                                  <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </span>
+                              )}
+                              <div className="flex flex-col">
+                                <div className="text-sm font-medium text-gray-700">{item.borrowDate}</div>
+                                {isRecent && <div className="text-xs text-green-600">Récent</div>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center">
+                              {isRecentReturn && (
+                                <span className="flex h-2 w-2 mr-2">
+                                  <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </span>
+                              )}
+                              <div className="flex flex-col">
+                                <div className="text-sm font-medium text-gray-700">{item.returnDate}</div>
+                                {isRecentReturn && <div className="text-xs text-green-600">Récent</div>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-gray-700 font-medium">
+                              {item.duration} jour{item.duration > 1 ? 's' : ''}
+                              {item.isReturned && item.duration <= 14 && (
+                                <span className="ml-1 text-xs text-green-600">✓</span>
+                              )}
+                              {item.isReturned && item.duration > 14 && (
+                                <span className="ml-1 text-xs text-yellow-600">⚠️</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {item.isReturned ? 
+                                (item.duration <= 14 ? "Dans les délais" : "Hors délai") : 
+                                "En cours"}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            {item.isReturned ? (
+                              <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Retourné
+                              </span>
+                            ) : (
+                              <span className="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                En cours
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Légende améliorée */}
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Légende</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="flex items-center">
+                    <span className="flex h-2 w-2 mr-2">
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span className="text-gray-600">Activité récente (moins de 3 jours)</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-xs text-green-600 mr-2">✓</span>
+                    <span className="text-gray-600">Retourné dans les délais</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-xs text-yellow-600 mr-2">⚠️</span>
+                    <span className="text-gray-600">Retourné avec retard</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="inline-flex h-5 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mr-2">
+                      Retourné
+                    </span>
+                    <span className="text-gray-600">Livre déjà rendu</span>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="inline-flex h-5 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 mr-2">
+                      En cours
+                    </span>
+                    <span className="text-gray-600">Emprunt toujours actif</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="bg-gray-100 rounded-full p-6 mb-4">
+                <Clock size={48} className="text-gray-400" />
+              </div>
+              <p className="text-lg text-gray-500 mb-2">Vous n'avez pas encore d'historique d'emprunts.</p>
+              <p className="text-sm text-gray-400 mb-6 text-center max-w-md">
+                Lorsque vous emprunterez des livres, votre historique s'affichera ici et sera enregistré de manière transparente sur la blockchain.
+              </p>
+              <button
+                onClick={() => setActiveTab('catalog')}
+                className="px-4 py-2 bg-[#2A3B8C] text-white rounded-md font-medium hover:bg-[#1F2D6B] transition flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                Parcourir le catalogue
+              </button>
+            </div>
+          )}
+          <div className="mt-4">
+            <TestButton userReputation={actualReputation} />
           </div>
-          <TestButton userReputation={actualReputation} />
         </div>
       </div>
 
