@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, BookOpen, Shield, AlertTriangle, CheckCircle, WifiOff, UserPlus, AlertCircle } from 'lucide-react';
 import web3Service from '../services/Web3Service';
+import Web3 from 'web3';
 
 // Renommer la prop pour éviter le conflit avec la fonction locale
 const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, account, connectToMetaMask: externalConnectToMetaMask }) => {
@@ -282,44 +283,119 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
         return;
       }
       
-      // Vérifier d'abord si l'utilisateur est déjà inscrit
-      const isAlreadyRegistered = await web3Service.isUserRegistered();
-      if (isAlreadyRegistered) {
-        console.log("L'utilisateur est déjà inscrit (vérifié via isUserRegistered)");
-        showNotification("Vous êtes déjà inscrit! Redirection vers votre espace...", "success");
-        
-        // Récupérer la réputation de l'utilisateur
-        const reputation = await web3Service.getUserReputation();
-        console.log("Réputation de l'utilisateur déjà inscrit:", reputation);
-        
-        // Déclencher l'événement de mise à jour de réputation
-        window.dispatchEvent(new CustomEvent('reputationUpdated', { 
-          detail: { reputation: reputation } 
-        }));
-        
-        // Rediriger vers le tableau de bord après un court délai
-        setTimeout(() => {
-          if (redirectSource === 'borrow') {
-            setActiveTab('catalog');
-          } else {
-            setActiveTab('dashboard');
+      // Vérification du réseau avant l'inscription
+      try {
+        const web3 = new Web3(window.ethereum);
+        const networkId = await web3.eth.net.getId();
+        if (![1337, 5777].includes(networkId)) {
+          // Mauvais réseau, tenter le changement automatique
+          showNotification(`Réseau non supporté (${networkId}). Tentative de connexion à Ganache...`, "warning");
+          
+          try {
+            // Tenter de basculer vers le réseau Ganache
+            await web3Service.switchNetwork(1337);
+            showNotification("Réseau changé avec succès.", "success");
+          } catch (switchError) {
+            console.error("Erreur lors du changement de réseau:", switchError);
+            showNotification("Veuillez vous connecter au réseau Ganache (1337) manuellement.", "error");
+            setIsSubmitting(false);
+            setIsLoading(false);
+            return;
           }
-        }, 1000);
-        
-        setIsSubmitting(false);
-        setIsLoading(false);
-        return;
+        }
+      } catch (networkError) {
+        console.error("Erreur lors de la vérification du réseau:", networkError);
+      }
+      
+      // Vérifier d'abord si l'utilisateur est déjà inscrit
+      try {
+        const isAlreadyRegistered = await web3Service.isUserRegistered();
+        if (isAlreadyRegistered) {
+          console.log("L'utilisateur est déjà inscrit (vérifié via isUserRegistered)");
+          showNotification("Vous êtes déjà inscrit! Redirection vers votre espace...", "success");
+          
+          // Récupérer la réputation de l'utilisateur
+          const reputation = await web3Service.getUserReputation();
+          console.log("Réputation de l'utilisateur déjà inscrit:", reputation);
+          
+          // Déclencher l'événement de mise à jour de réputation
+          window.dispatchEvent(new CustomEvent('reputationUpdated', { 
+            detail: { reputation: reputation } 
+          }));
+          
+          // Rediriger vers le tableau de bord après un court délai
+          setTimeout(() => {
+            if (redirectSource === 'borrow') {
+              setActiveTab('catalog');
+            } else {
+              setActiveTab('dashboard');
+            }
+          }, 1000);
+          
+          setIsSubmitting(false);
+          setIsLoading(false);
+          return;
+        }
+      } catch (checkError) {
+        console.warn("Erreur lors de la vérification initiale d'inscription:", checkError);
+        // Ne pas bloquer le processus, continuer avec l'inscription
       }
       
       // Étape 3: Appel au contrat pour l'inscription
       setCurrentStep('registering');
       showNotification("Vérification et enregistrement sur la blockchain...", "info");
       
+      // Essayer d'initialiser/réinitialiser Web3Service pour s'assurer qu'il est correctement connecté
+      try {
+        await web3Service.initialize();
+      } catch (initError) {
+        console.warn("Erreur lors de l'initialisation de Web3Service:", initError);
+        // Continuer malgré l'erreur potentielle
+      }
+      
       // Utiliser l'adresse du compte connecté
       const currentAccount = account || ethereumAddress;
       console.log("Compte utilisé pour l'inscription:", currentAccount);
       
-      const result = await web3Service.registerUser(userName, parseInt(userRole));
+      // Tentative d'inscription avec plusieurs essais en cas d'échec
+      let result = null;
+      let attempts = 0;
+      const maxAttempts = 2;
+      
+      while (attempts < maxAttempts) {
+        try {
+          attempts++;
+          result = await web3Service.registerUser(userName, parseInt(userRole));
+          // Si on arrive ici, l'inscription a réussi ou l'utilisateur est déjà inscrit
+          break;
+        } catch (registerError) {
+          console.error(`Tentative d'inscription ${attempts} échouée:`, registerError);
+          
+          // Si c'est la dernière tentative, gérer l'erreur normalement
+          if (attempts >= maxAttempts) {
+            throw registerError;
+          }
+          
+          // Si l'erreur est liée au contrat, essayer de réinitialiser avant une nouvelle tentative
+          if (registerError.code === "CONTRACT_UNAVAILABLE" || 
+              registerError.code === "INITIALIZATION_FAILED" ||
+              registerError.message.includes("contract") ||
+              registerError.message.includes("network")) {
+            
+            showNotification(`Problème de connexion au contrat (tentative ${attempts}/${maxAttempts})...`, "warning");
+            
+            // Attendre un peu avant de réessayer
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // Tenter une réinitialisation complète de Web3Service
+            await web3Service.clearAllUserData();
+            await web3Service.initialize();
+          } else {
+            // Si c'est une autre erreur, la propager
+            throw registerError;
+          }
+        }
+      }
       
       // Vérifier si l'utilisateur est déjà inscrit (nouvelle méthode)
       if (result && result.alreadyRegistered) {
@@ -350,9 +426,14 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
         return;
       }
       
-      // Étape 4: Traitement du résultat
-      setCurrentStep('success');
-      showNotification(`Inscription réussie en tant que ${userRole === '0' ? 'étudiant' : 'professeur'}!`, "success");
+      // Gérer le cas du mode hors ligne
+      if (result && result.isOfflineMode) {
+        showNotification("Inscription temporaire (mode hors ligne) effectuée. Certaines fonctionnalités peuvent être limitées.", "warning");
+      } else {
+        // Étape 4: Traitement du résultat de l'inscription normale
+        setCurrentStep('success');
+        showNotification(`Inscription réussie en tant que ${userRole === '0' ? 'étudiant' : 'professeur'}!`, "success");
+      }
       
       // Déclencher un événement personnalisé pour informer l'application de la nouvelle inscription
       window.dispatchEvent(new CustomEvent('userRegistered', { 
@@ -376,7 +457,7 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
       console.error("Erreur lors de l'inscription:", error);
       
       // Traitement des différents cas d'erreur selon le diagramme
-      if (error.code === "USER_EXISTS" || (error.message && error.message.includes("User already exists"))) {
+      if (error.code === "USER_EXISTS" || (error.message && error.message.includes("User already exists")) || (error.message && error.message.includes("utilisateur deja inscrit"))) {
         showNotification("Vous êtes déjà inscrit! Redirection vers votre espace...", "info");
         
         // Rediriger vers l'espace personnel
@@ -388,7 +469,11 @@ const LoginTab = ({ setActiveTab, showNotification, setIsLoading, isConnected, a
       } else if (error.code === 4001) {
         showNotification("Transaction refusée. Veuillez réessayer et confirmer dans MetaMask.", "warning");
       } else if (error.code === 'UNSUPPORTED_NETWORK') {
-        showNotification(`Erreur réseau: ${error.networkName || 'Inconnu'}. Veuillez réessayer.`, "warning");
+        showNotification(`Réseau non supporté: ${error.networkName || 'Inconnu'}. Veuillez vous connecter à Ganache.`, "warning");
+      } else if (error.code === "GAS_ERROR") {
+        showNotification("Transaction sous-financée. Veuillez augmenter la limite de gas dans MetaMask.", "warning");
+      } else if (error.code === "CONTRACT_UNAVAILABLE" || error.code === "METHOD_NOT_FOUND") {
+        showNotification("Contrat non disponible ou invalide. Veuillez vérifier votre connexion réseau.", "error");
       } else {
         showNotification("Erreur lors de l'inscription: " + error.message, "error");
       }

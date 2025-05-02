@@ -16,3 +16,12 @@ root.render(
 // to log results (for example: reportWebVitals(console.log))
 // or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals();
+
+// Ajouter l'image de fond après le chargement
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.style.backgroundImage = "url('/assets/images/library-background.jpg')";
+  document.body.style.backgroundRepeat = "no-repeat";
+  document.body.style.backgroundPosition = "center center";
+  document.body.style.backgroundAttachment = "fixed";
+  document.body.style.backgroundSize = "cover";
+});

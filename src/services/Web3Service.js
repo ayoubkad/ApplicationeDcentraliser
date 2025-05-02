@@ -17,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x036b565EEc6813A3319EbCE9f70a0B9587Fa684B', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x036b565EEc6813A3319EbCE9f70a0B9587Fa684B'  // Ganache - Adresse déployée
+      1337: '0x71B375CC13cc523C924e59e9ea7EA056639F808e', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x71B375CC13cc523C924e59e9ea7EA056639F808e'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -29,7 +29,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x036b565EEc6813A3319EbCE9f70a0B9587Fa684B';
+    this.contractAddress = '0x71B375CC13cc523C924e59e9ea7EA056639F808e';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -492,7 +492,10 @@ class Web3Service {
       this.contractAddresses[networkId],
       '0xef344c1FA4054a56651b8006587ab7AeE3BbDB3c', // Adresse précédente
       '0x89F06E0A7930688B109FE6c91fbE8B3530Ca5150', // Autre adresse possible
-      '0xf9a82C631f7C03bb2DCA0435C982826621966e15'  // Nouvelle adresse
+      '0xf9a82C631f7C03bb2DCA0435C982826621966e15',  // Nouvelle adresse
+      '0x5923bb90e3aAf575ca3cad97Cb6d8C1626a5EB95',  // Adresse de test locale
+      '0xB7A5bd0345EF1Cc5E66bf61BdeC17D2461fBd968',  // Adresse alternative récente
+      '0x6d6da0F1Fb2CC85c2c1d813f7e1f532242499E1d'   // Adresse supplémentaire
     ];
 
     console.log("Vérification des adresses candidates:", candidateAddresses);
@@ -821,7 +824,7 @@ class Web3Service {
       console.log("Web3 n'est pas initialisé, tentative d'initialisation...");
       const success = await this.initialize();
       if (!success) {
-        const error = new Error("Failed to initialize Web3");
+        const error = new Error("Impossible d'initialiser Web3. Veuillez vérifier votre connexion à MetaMask.");
         error.code = "INITIALIZATION_FAILED";
         throw error;
       }
@@ -830,7 +833,7 @@ class Web3Service {
     // Vérifier que le rôle est valide (0 = étudiant, 1 = professeur)
     if (role !== 0 && role !== 1) {
       console.error("Rôle invalide:", role);
-      const error = new Error("Invalid role");
+      const error = new Error("Rôle invalide. Veuillez choisir Étudiant (0) ou Professeur (1).");
       error.code = "INVALID_ROLE";
       throw error;
     }
@@ -838,7 +841,7 @@ class Web3Service {
     // Vérifier que le nom est valide
     if (!name || typeof name !== 'string' || name.trim().length < 2) {
       console.error("Nom invalide:", name);
-      const error = new Error("Invalid name");
+      const error = new Error("Nom invalide. Veuillez entrer un nom d'au moins 2 caractères.");
       error.code = "INVALID_NAME";
       throw error;
     }
@@ -846,35 +849,71 @@ class Web3Service {
     // Vérifier que nous avons un compte
     if (!this.account) {
       console.error("Pas de compte connecté");
-      const error = new Error("No account connected");
+      const error = new Error("Aucun compte connecté. Veuillez vous connecter à MetaMask.");
       error.code = "NO_ACCOUNT";
       throw error;
     }
     
     console.log("Vérification des prérequis terminée, tentative d'inscription...");
     
+    // Vérifier le réseau
+    try {
+      const networkId = await this.web3.eth.net.getId();
+      console.log("Réseau actuel:", networkId);
+      
+      if (!this.isNetworkSupported(networkId)) {
+        const error = new Error(`Le réseau ${networkId} n'est pas supporté. Veuillez vous connecter à Ganache (1337).`);
+        error.code = "UNSUPPORTED_NETWORK";
+        error.networkId = networkId;
+        error.networkName = this.getNetworkName(networkId);
+        throw error;
+      }
+    } catch (networkError) {
+      if (networkError.code === "UNSUPPORTED_NETWORK") {
+        throw networkError;
+      }
+      console.error("Erreur lors de la vérification du réseau:", networkError);
+    }
+    
     // Vérifier si l'utilisateur est déjà inscrit (indépendamment du contrat)
     const lowerCaseAddress = this.account.toLowerCase();
     
     // *** VÉRIFICATION COMPLÈTE D'INSCRIPTION ***
-    // Vérifier directement avec isUserRegistered() pour une détection cohérente
-    const isRegistered = await this.isUserRegistered();
-    if (isRegistered) {
-      console.log("L'utilisateur est déjà inscrit (détecté via isUserRegistered())");
-      
-      // Au lieu de lancer une erreur, nous retournons un objet indiquant que l'utilisateur existe déjà
-      return {
-        success: true,
-        alreadyRegistered: true,
-        userAddress: this.account,
-        message: "L'utilisateur est déjà inscrit"
-      };
+    try {
+      const isRegistered = await this.isUserRegistered();
+      if (isRegistered) {
+        console.log("L'utilisateur est déjà inscrit (détecté via isUserRegistered())");
+        
+        // Au lieu de lancer une erreur, nous retournons un objet indiquant que l'utilisateur existe déjà
+        return {
+          success: true,
+          alreadyRegistered: true,
+          userAddress: this.account,
+          message: "L'utilisateur est déjà inscrit"
+        };
+      }
+    } catch (checkError) {
+      console.warn("Erreur lors de la vérification d'inscription:", checkError);
+      // Continuer malgré l'erreur, car nous ferons une vérification supplémentaire plus tard
     }
     
-    // Si le contrat n'est pas disponible, essayer de l'initialiser
+    // Si le contrat n'est pas disponible, essayer de l'initialiser à nouveau avec détection
     if (!this.contract) {
-      console.log("Tentative de récupération du contrat avant inscription...");
-      await this.tryInitializeContract(this.networkId);
+      console.log("Contrat non disponible, tentative de récupération...");
+      try {
+        // Tenter une détection explicite du contrat
+        const networkId = await this.web3.eth.net.getId();
+        const detectedAddress = await this.detectDeployedContract(networkId);
+        
+        if (detectedAddress) {
+          console.log(`Contrat détecté à l'adresse: ${detectedAddress}`);
+          this.contractAddresses[networkId] = detectedAddress;
+          this.contractAddress = detectedAddress;
+          await this.tryInitializeContract(networkId);
+        }
+      } catch (detectionError) {
+        console.error("Erreur lors de la détection du contrat:", detectionError);
+      }
       
       // Si le contrat n'est toujours pas disponible, gérer le mode "hors ligne"
       if (!this.contract) {
@@ -933,25 +972,71 @@ class Web3Service {
     // Faire une vérification complète d'inscription si le contrat est disponible
     if (this.contract && this.contract.methods) {
       try {
-        const isRegistered = await this.isUserRegistered();
-        
-        if (isRegistered) {
-          console.error("L'utilisateur est déjà inscrit (vérification complète)");
-          const error = new Error("User already exists");
-          error.code = "USER_EXISTS";
+        // Vérifier d'abord si la méthode registerUser existe
+        if (!this.contract.methods.registerUser) {
+          console.error("La méthode registerUser n'existe pas dans le contrat");
+          const error = new Error("La méthode d'inscription n'est pas disponible. Veuillez vérifier l'adresse du contrat.");
+          error.code = "METHOD_NOT_FOUND";
           throw error;
+        }
+        
+        // Double-vérification pour s'assurer que l'utilisateur n'est pas déjà inscrit
+        try {
+          const isRegistered = await this.contract.methods.isUserRegistered(this.account).call();
+          if (isRegistered) {
+            console.log("L'utilisateur est déjà inscrit (vérification via contrat)");
+            return {
+              success: true,
+              alreadyRegistered: true,
+              userAddress: this.account,
+              message: "L'utilisateur est déjà inscrit"
+            };
+          }
+        } catch (checkError) {
+          console.warn("Erreur lors de la vérification d'inscription via le contrat:", checkError);
+          // Continuer malgré l'erreur
         }
         
         // Si l'utilisateur n'existe pas, procéder à l'inscription
         console.log("Envoi de la transaction d'inscription...");
+        
+        // Ajouter des options explicites pour garantir le gas suffisant
         const receipt = await this.contract.methods.registerUser(name, role).send({
-          from: this.account
+          from: this.account,
+          gas: 500000,  // Limite de gas plus élevée
+          gasPrice: this.web3.utils.toWei('20', 'gwei')  // Prix du gas explicite
         });
         
         console.log("Transaction d'inscription réussie:", receipt);
         
         // Mettre à jour le cache
         this.userRegisteredCache.set(lowerCaseAddress, true);
+        
+        // Mettre à jour le localStorage
+        try {
+          let registeredUsers = [];
+          const storedUsers = localStorage.getItem('registeredUsers');
+          if (storedUsers) {
+            registeredUsers = JSON.parse(storedUsers);
+          }
+          if (!registeredUsers.includes(lowerCaseAddress)) {
+            registeredUsers.push(lowerCaseAddress);
+            localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+          }
+          
+          // Stocker également les informations d'utilisateur
+          const userData = {
+            address: this.account,
+            name: name,
+            role: role,
+            reputation: 80,
+            registrationTime: Date.now(),
+            transactionHash: receipt.transactionHash
+          };
+          localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(userData));
+        } catch (storageError) {
+          console.warn("Erreur lors du stockage des données d'inscription:", storageError);
+        }
         
         // Retourner un objet contenant les informations pertinentes
         return {
@@ -962,11 +1047,42 @@ class Web3Service {
           userAddress: this.account
         };
       } catch (contractError) {
-        // Si l'erreur indique que l'utilisateur existe déjà
-        if (contractError.message && contractError.message.includes("already exists")) {
-          console.error("L'utilisateur est déjà inscrit (message du contrat)");
-          const error = new Error("User already exists");
-          error.code = "USER_EXISTS";
+        console.error("Erreur lors de l'inscription via le contrat:", contractError);
+        
+        // Analyser les erreurs de contrat
+        if (contractError.message) {
+          // Si l'erreur indique que l'utilisateur existe déjà
+          if (contractError.message.includes("utilisateur deja inscrit") || 
+              contractError.message.includes("already exists") ||
+              contractError.message.includes("already registered")) {
+            console.log("L'utilisateur est déjà inscrit (message d'erreur du contrat)");
+            
+            // Mettre à jour le cache pour indiquer que l'utilisateur est inscrit
+            this.userRegisteredCache.set(lowerCaseAddress, true);
+            
+            // Retourner une réponse indiquant que l'utilisateur est déjà inscrit
+            return {
+              success: true,
+              alreadyRegistered: true,
+              userAddress: this.account,
+              message: "L'utilisateur est déjà inscrit (détecté par erreur du contrat)"
+            };
+          }
+          
+          // Si l'erreur est liée à un gas insuffisant
+          if (contractError.message.includes("gas") || 
+              contractError.message.includes("Gas") ||
+              contractError.message.includes("underpriced")) {
+            const error = new Error("Transaction sous-financée. Veuillez augmenter la limite de gas dans MetaMask.");
+            error.code = "GAS_ERROR";
+            throw error;
+          }
+        }
+        
+        // Si le code d'erreur est 4001, c'est un rejet de l'utilisateur
+        if (contractError.code === 4001) {
+          const error = new Error("Transaction annulée par l'utilisateur");
+          error.code = 4001;
           throw error;
         }
         
@@ -974,56 +1090,9 @@ class Web3Service {
         throw contractError;
       }
     } else {
-      // Mode hors ligne - stocker temporairement les informations
-      console.warn("Mode inscription hors ligne - Contrat non disponible");
-      
-      // Stocker en cache local que l'utilisateur est "inscrit" (temporairement)
-      this.userRegisteredCache.set(lowerCaseAddress, true);
-      
-      // Stocker dans localStorage pour persistance
-      try {
-        let registeredUsers = [];
-        const storedUsers = localStorage.getItem('registeredUsers');
-        if (storedUsers) {
-          registeredUsers = JSON.parse(storedUsers);
-        }
-        if (!registeredUsers.includes(lowerCaseAddress)) {
-          registeredUsers.push(lowerCaseAddress);
-          localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-        }
-        
-        // Stocker également les informations d'utilisateur
-        const userData = {
-          address: this.account,
-          name: name,
-          role: role,
-          reputation: 80,
-          registrationTime: Date.now()
-        };
-        localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(userData));
-      } catch (storageError) {
-        console.warn("Erreur lors du stockage dans localStorage:", storageError);
-      }
-      
-      // Créer un événement personnalisé pour simuler l'inscription
-      window.dispatchEvent(new CustomEvent('userRegistered', { 
-        detail: { 
-          account: this.account,
-          name: name,
-          role: role,
-          timestamp: Date.now()
-        }
-      }));
-      
-      // Retourner un objet simulant la réponse d'une transaction
-      return {
-        success: true,
-        isOfflineMode: true,
-        userName: name,
-        userRole: role,
-        userAddress: this.account,
-        message: "Inscription temporaire (mode hors ligne) - Veuillez vous assurer que votre contrat est déployé"
-      };
+      const error = new Error("Le contrat n'est pas disponible. Veuillez vérifier votre connexion réseau et réessayer.");
+      error.code = "CONTRACT_UNAVAILABLE";
+      throw error;
     }
   }
 
@@ -1221,71 +1290,86 @@ class Web3Service {
   }
 
   async returnBook(bookId) {
-    if (!this.initialized) await this.initialize();
-    
     try {
-      // Préparation de la transaction
-      const method = this.contract.methods.returnBook(bookId);
-      
-      // Options par défaut pour la transaction
-      const defaultOptions = {
+      if (!this.isInitialized()) {
+        await this.initialize();
+      }
+
+      if (!this.account) {
+        throw new Error("Aucun compte connecté. Veuillez vous connecter à MetaMask.");
+      }
+
+      const book = await this.getBook(bookId);
+      if (!book) {
+        throw new Error(`Livre avec l'ID ${bookId} introuvable.`);
+      }
+
+      if (book.borrowedBy.toLowerCase() !== this.account.toLowerCase()) {
+        throw new Error("Vous n'avez pas emprunté ce livre. Seul l'emprunteur peut le retourner.");
+      }
+
+      if (!book.currentBorrowId) {
+        throw new Error("Ce livre n'a pas d'emprunt actif à retourner.");
+      }
+
+      console.log(`Tentative de retour du livre avec l'ID ${bookId}`);
+
+      // Obtenir la réputation actuelle pour calculer le changement après le retour
+      const oldReputation = await this.getUserReputation();
+      console.log("Réputation avant le retour:", oldReputation);
+
+      // Préparer la transaction
+      const tx = await this.contract.methods.returnBook(bookId).send({
         from: this.account,
-        gas: this.defaultGasLimit || 500000
-      };
-      
-      // Vérifier l'estimation de gaz pour cette transaction
+        gas: 200000
+      });
+
+      console.log("Transaction de retour réussie:", tx);
+
+      // Attendre un court instant pour que la blockchain se mette à jour
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Récupérer la nouvelle réputation directement depuis la blockchain
+      const newReputation = await this.contract.methods.getUserReputation(this.account).call();
+      console.log("Réputation après le retour:", newReputation);
+
+      // Mettre à jour le localStorage avec la nouvelle réputation
       try {
-        const gasEstimate = await method.estimateGas({from: this.account});
-        console.log(`Estimation de gaz pour le retour du livre ${bookId}:`, gasEstimate);
-        
-        // Si l'estimation est proche de la limite, augmenter la limite
-        if (gasEstimate > defaultOptions.gas * 0.9) {
-          defaultOptions.gas = Math.floor(gasEstimate * 1.2); // Ajouter 20% de marge
-          console.log(`Limite de gaz ajustée pour le retour:`, defaultOptions.gas);
+        const lowerCaseAddress = this.account.toLowerCase();
+        const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
+        if (userData) {
+          const user = JSON.parse(userData);
+          user.reputation = parseInt(newReputation);
+          localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
+          console.log("Réputation mise à jour dans localStorage:", newReputation);
         }
-      } catch (estimateError) {
-        console.warn(`Impossible d'estimer le gaz pour le retour du livre ${bookId}:`, estimateError);
-        // Continuer avec la valeur par défaut
+      } catch (storageError) {
+        console.warn("Erreur lors de la sauvegarde de la réputation:", storageError);
       }
-      
-      // Exécution de la transaction
-      const result = await method.send(defaultOptions);
-      
-      console.log(`Résultat du retour du livre ${bookId}:`, result);
-      return result;
+
+      // Déclencher un événement personnalisé pour informer l'application
+      window.dispatchEvent(new CustomEvent('bookReturned', {
+        detail: {
+          bookId: bookId,
+          bookDetails: book,
+          transaction: tx,
+          oldReputation: oldReputation,
+          newReputation: newReputation
+        }
+      }));
+
+      return {
+        success: true,
+        transaction: tx,
+        reputation: newReputation,
+        reputationChange: parseInt(newReputation) - parseInt(oldReputation)
+      };
     } catch (error) {
-      console.error(`Erreur lors du retour du livre ${bookId}:`, error);
-      
-      // Gérer les erreurs spécifiques de MetaMask
-      if (error.code === -32603 && error.message.includes("Internal JSON-RPC error")) {
-        // Tenter d'extraire le message d'erreur interne
-        try {
-          const errorObj = JSON.parse(error.stack.match(/{.*}/s)[0]);
-          if (errorObj && errorObj.message) {
-            throw new Error(`Erreur MetaMask: ${errorObj.message}`);
-          }
-        } catch (parseError) {
-          // Si nous ne pouvons pas parser l'erreur, suggérer une solution
-          throw new Error("Erreur de transaction MetaMask. Essayez de réinitialiser votre compte dans MetaMask (Paramètres > Avancé > Réinitialiser le compte).");
-        }
-      } 
-      // Gérer l'erreur "user rejected transaction"
-      else if (error.code === 4001 || (error.message && error.message.includes("User denied"))) {
-        throw new Error("Transaction annulée par l'utilisateur");
-      }
-      // Gérer l'erreur de limite de gaz insuffisante
-      else if (error.message && error.message.toLowerCase().includes("gas")) {
-        throw new Error("Limite de gaz insuffisante. Veuillez augmenter la limite de gaz dans les options de transaction.");
-      }
-      // Gérer les erreurs spécifiques du contrat
-      else if (error.message && error.message.includes("revert LibraryDApp")) {
-        const errorMsg = error.message.match(/revert (LibraryDApp:.*?)(?:'|$)/);
-        if (errorMsg && errorMsg[1]) {
-          throw new Error(errorMsg[1]);
-        }
-      }
-      
-      throw error;
+      console.error("Erreur lors du retour du livre:", error);
+      return {
+        success: false,
+        message: error.message || "Une erreur s'est produite lors du retour du livre."
+      };
     }
   }
 
@@ -1309,7 +1393,52 @@ class Web3Service {
         }
       }
       
-      // Vérifier si nous avons des données d'utilisateur stockées dans localStorage
+      // Essayer d'abord d'obtenir la réputation directement depuis la blockchain
+      // plutôt que de se fier au cache/localStorage
+      if (this.contract && this.contract.methods.getUserReputation) {
+        try {
+          console.log("Récupération de la réputation directement depuis la blockchain...");
+          const blockchainReputation = await this.contract.methods.getUserReputation(userAddress).call({
+            from: this.account,
+            gas: 3000000
+          });
+          
+          console.log("Réputation récupérée depuis la blockchain:", blockchainReputation);
+          
+          // Si on a un résultat de la blockchain, c'est la source la plus fiable,
+          // alors on met à jour le localStorage et on retourne cette valeur
+          if (blockchainReputation) {
+            // Mettre à jour le localStorage avec la valeur de la blockchain
+            try {
+              const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
+              if (userData) {
+                const user = JSON.parse(userData);
+                user.reputation = parseInt(blockchainReputation);
+                user.lastUpdated = Date.now();
+                localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
+              } else {
+                // Créer un nouvel enregistrement utilisateur
+                const newUser = {
+                  address: userAddress,
+                  reputation: parseInt(blockchainReputation),
+                  lastUpdated: Date.now()
+                };
+                localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(newUser));
+              }
+              console.log("Réputation mise à jour dans localStorage:", blockchainReputation);
+            } catch (storageError) {
+              console.warn("Erreur lors de la sauvegarde de la réputation:", storageError);
+            }
+            
+            return String(blockchainReputation);
+          }
+        } catch (blockchainError) {
+          console.warn("Erreur lors de la récupération depuis la blockchain:", blockchainError);
+          // Continuer avec les méthodes alternatives ci-dessous
+        }
+      }
+      
+      // Si la récupération depuis la blockchain échoue, essayer le localStorage
       try {
         const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
         if (userData) {
@@ -1323,80 +1452,8 @@ class Web3Service {
         console.warn("Erreur lors de la lecture depuis localStorage:", storageError);
       }
       
-      // Vérifier que le contrat est disponible
-      if (!this.contract || !this.contract.methods) {
-        console.warn("Contrat non disponible dans getUserReputation, retour de la valeur par défaut");
-        return '80'; // Valeur par défaut de réputation
-      }
-      
-      // Vérifier directement si l'utilisateur est inscrit avant de récupérer sa réputation
-      if (userAddress === this.account) {
-        // Utiliser le cache pour l'utilisateur actuel
-        if (this.userRegisteredCache.has(lowerCaseAddress) && !this.userRegisteredCache.get(lowerCaseAddress)) {
-          console.log("L'utilisateur n'est pas inscrit, réputation par défaut retournée");
-          return '80'; // Valeur par défaut de réputation pour les nouveaux utilisateurs
-        }
-      }
-      
-      // Appeler la méthode du contrat avec une limite de gas élevée
-      // Vérifier d'abord que la méthode existe
-      if (!this.contract.methods.getUserReputation) {
-        console.warn("Méthode getUserReputation non disponible dans le contrat");
-        return '80'; // Valeur par défaut de réputation
-      }
-      
-      // Ajouter un timeout pour éviter les blocages
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Timeout dépassé')), 10000);
-      });
-      
-      // Créer la promesse pour l'appel du contrat
-      const contractPromise = this.contract.methods.getUserReputation(userAddress).call({
-        from: this.account,
-        gas: 6000000
-      });
-      
-      // Race entre le timeout et l'appel
-      const result = await Promise.race([contractPromise, timeoutPromise])
-        .catch(err => {
-          console.warn("Erreur ou timeout dans getUserReputation:", err.message);
-          return '80'; // Valeur par défaut de réputation en cas d'erreur
-        });
-      
-      const reputation = result || '80'; // Valeur par défaut si le résultat est falsy
-      
-      // Stocker la réputation dans localStorage pour la prochaine fois
-      try {
-        const userData = localStorage.getItem(`user_${lowerCaseAddress}`);
-        if (userData) {
-          const user = JSON.parse(userData);
-          user.reputation = parseInt(reputation);
-          localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
-        } else {
-          // Créer un nouvel enregistrement utilisateur
-          const newUser = {
-            address: userAddress,
-            reputation: parseInt(reputation),
-            lastUpdated: Date.now()
-          };
-          localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(newUser));
-          
-          // Ajouter à la liste des utilisateurs enregistrés
-          let registeredUsers = [];
-          const storedUsers = localStorage.getItem('registeredUsers');
-          if (storedUsers) {
-            registeredUsers = JSON.parse(storedUsers);
-          }
-          if (!registeredUsers.includes(lowerCaseAddress)) {
-            registeredUsers.push(lowerCaseAddress);
-            localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
-          }
-        }
-      } catch (storageError) {
-        console.warn("Erreur lors de la sauvegarde de la réputation dans localStorage:", storageError);
-      }
-      
-      return reputation;
+      // Valeur par défaut si tout échoue
+      return '80';
     } catch (error) {
       console.error('Erreur lors de la récupération de la réputation:', error);
       return '80'; // Valeur par défaut de réputation en cas d'erreur
