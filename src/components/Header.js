@@ -95,7 +95,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
   };
 
   return (
-    <header className="bg-white shadow-md">
+    <header className="tab-navigation shadow-md px-4 py-3 sticky top-0 z-50">
       <div className="container mx-auto px-4 py-3">
         {/* Barre de navigation supérieure */}
         <div className="flex justify-between items-center">

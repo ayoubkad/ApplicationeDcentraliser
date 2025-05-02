@@ -2,6 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Ajouter l'image de bibliothèque comme fond d'écran de l'application */
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
@@ -9,7 +10,42 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* direction: rtl; */
+  /* Utiliser un chemin relatif au dossier public */
+  background-color: #f5f5f5;
+  position: relative;
+  min-height: 100vh;
+}
+
+/* Overlay pour améliorer la lisibilité du contenu sur l'image de fond */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.92);
+  z-index: -1;
+}
+
+/* Assurez-vous que les contenus de l'application sont bien lisibles */
+.App {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+/* Améliorer les cartes et conteneurs pour qu'ils se démarquent du fond */
+.bg-white {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(5px);
+}
+
+/* Style pour les onglets de navigation pour qu'ils s'adaptent au fond */
+.tab-navigation {
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 code {
