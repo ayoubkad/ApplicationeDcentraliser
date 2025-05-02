@@ -271,6 +271,15 @@ contract LibraryDApp {
         }
 
     /**
+     * @notice Vérifie si un livre existe dans la bibliothèque
+     * @param _bookId L'identifiant du livre à vérifier
+     * @return bool Retourne true si le livre existe, false sinon
+     */
+    function doesBookExist(uint _bookId) public view returns (bool) {
+        return (_bookId > 0 && _bookId <= bookCount);
+    }
+
+    /**
      * @notice Vérifie si une adresse est un utilisateur enregistré
      * @param _userAddress L'adresse à vérifier
      * @return bool Retourne true si l'utilisateur est enregistré, false sinon

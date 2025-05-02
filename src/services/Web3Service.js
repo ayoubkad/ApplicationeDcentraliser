@@ -3214,6 +3214,18 @@ class Web3Service {
       return false;
     }
   }
+
+  // Méthode pour vérifier si un livre existe
+  async doesBookExist(bookId) {
+    try {
+      return await this.callContractMethod('doesBookExist', [bookId]);
+    } catch (error) {
+      console.error("Erreur lors de la vérification de l'existence du livre:", error);
+      return false;
+    }
+  }
+
+  // Méthode pour restaurer un livre masqué
 }
 
 const web3Service = new Web3Service();
