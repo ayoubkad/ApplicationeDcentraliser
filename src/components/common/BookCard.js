@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Download, Image, AlertTriangle } from 'lucide-react';
+import { BookOpen, Download, Image, AlertTriangle, Shield, Clock } from 'lucide-react';
 import web3Service from '../../services/Web3Service';
 import ipfsService from '../../services/IPFSService';
 
-const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, isRegistered }) => {
+const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, isRegistered, showAddedBy = false }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [imageState, setImageState] = useState({
     loading: true,
@@ -153,6 +153,14 @@ const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, is
             Emprunté
           </div>
         )}
+        
+        {/* Badge pour indiquer que le livre a été ajouté par l'administrateur */}
+        {showAddedBy && book.addedBy === 'admin' && (
+          <div className="absolute bottom-0 left-0 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 m-2 rounded-full flex items-center">
+            <Shield size={12} className="mr-1" />
+            Admin
+          </div>
+        )}
       </div>
       
       {/* Contenu */}
@@ -167,6 +175,14 @@ const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, is
               {book.pageCount && <span>{book.pageCount} pages</span>}
             </div>
           </>
+        )}
+        
+        {/* Afficher la date d'ajout si disponible */}
+        {showAddedBy && book.addedDate && (
+          <div className="flex items-center text-xs text-gray-500 mb-2">
+            <Clock size={12} className="mr-1" />
+            Ajouté le {new Date(book.addedDate).toLocaleDateString('fr-FR')}
+          </div>
         )}
         
         <div className="flex justify-between items-center">

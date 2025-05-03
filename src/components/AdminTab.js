@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw, ShieldAlert, Loader } from 'lucide-react';
 import ipfsService from '../services/IPFSService';
 import web3Service from '../services/Web3Service';
 
@@ -38,6 +38,65 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   const [networkId, setNetworkId] = useState(null);
   const [bookStats, setBookStats] = useState({ total: 0, borrowed: 0, available: 0, overdue: 0 });
   const [ipfsError, setIpfsError] = useState(null);
+  const [loadingStates, setLoadingStates] = useState({
+    admin: false,
+    ipfs: false,
+    books: false,
+    hiddenBooks: false,
+    addBook: false,
+    removeBook: false
+  });
+  const [timeoutIds, setTimeoutIds] = useState({});
+
+  // Helper pour gérer les états de chargement avec timeout
+  const startLoading = (type, timeoutMs = 10000) => {
+    // Annuler tout timeout existant pour ce type
+    if (timeoutIds[type]) {
+      clearTimeout(timeoutIds[type]);
+    }
+
+    // Mettre à jour l'état de chargement
+    setLoadingStates(prev => ({ ...prev, [type]: true }));
+    
+    // Configurer un timeout pour arrêter automatiquement après un certain temps
+    const timeoutId = setTimeout(() => {
+      setLoadingStates(prev => ({ ...prev, [type]: false }));
+      // Afficher une notification si le chargement prend trop de temps
+      setNotification({
+        message: `Le chargement de ${getLoadingLabel(type)} prend plus de temps que prévu. Veuillez vérifier votre connexion.`,
+        type: 'warning'
+      });
+    }, timeoutMs);
+    
+    // Enregistrer l'ID du timeout
+    setTimeoutIds(prev => ({ ...prev, [type]: timeoutId }));
+    
+    return () => {
+      // Fonction pour arrêter le chargement
+      clearTimeout(timeoutIds[type]);
+      setLoadingStates(prev => ({ ...prev, [type]: false }));
+    };
+  };
+
+  // Fonction pour obtenir le libellé des types de chargement
+  const getLoadingLabel = (type) => {
+    const labels = {
+      admin: "la vérification administrateur",
+      ipfs: "la connexion IPFS",
+      books: "la liste des livres",
+      hiddenBooks: "les livres masqués",
+      addBook: "l'ajout du livre",
+      removeBook: "la suppression du livre"
+    };
+    return labels[type] || "l'opération";
+  };
+
+  // Nettoyage des timeouts au démontage du composant
+  useEffect(() => {
+    return () => {
+      Object.values(timeoutIds).forEach(id => clearTimeout(id));
+    };
+  }, [timeoutIds]);
 
   useEffect(() => {
     checkIPFSConnection();
@@ -58,7 +117,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   }, [isAdmin]);
 
   const checkAdminStatus = async () => {
-    setIsCheckingAdmin(true);
+    const stopLoading = startLoading('admin');
     try {
       // Vérifier si l'utilisateur est connecté à MetaMask
       if (!web3Service.isConnected()) {
@@ -78,14 +137,19 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     } catch (error) {
       console.error("Erreur lors de la vérification du statut d'administrateur:", error);
       setIsAdmin(false);
+      setNotification({ 
+        message: `Erreur lors de la vérification du statut d'administrateur: ${error.message}`, 
+        type: 'error' 
+      });
     } finally {
+      stopLoading();
       setIsCheckingAdmin(false);
     }
   };
 
   const checkIPFSConnection = async () => {
-    setIpfsStatus({ checking: true, connected: false });
-
+    const stopLoading = startLoading('ipfs', 15000);
+    
     try {
       const status = await ipfsService.testConnection();
       setIpfsStatus({ checking: false, connected: status.connected, nodeInfo: status.nodeInfo || '' });
@@ -98,6 +162,8 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     } catch (error) {
       setIpfsStatus({ checking: false, connected: false, error: error.message });
       setNotification({ message: 'Erreur lors de la vérification de la connexion IPFS', type: 'error' });
+    } finally {
+      stopLoading();
     }
   };
 
@@ -135,7 +201,9 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       return null;
     }
 
+    const stopLoading = startLoading('ipfs', 30000);
     setIsUploading(true);
+    
     try {
       const result = await ipfsService.uploadBookData(
         newBook,
@@ -157,6 +225,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       });
       return null;
     } finally {
+      stopLoading();
       setIsUploading(false);
     }
   };
@@ -175,7 +244,10 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       setNotification({ message: "Le titre et l'auteur sont obligatoires", type: "warning" });
       return;
     }
+    
+    const stopLoading = startLoading('addBook', 60000);
     setIsLoading(true);
+    
     try {
       // Uploader d'abord sur IPFS
       const hash = await uploadToIPFS();
@@ -276,6 +348,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
         });
       }
     } finally {
+      stopLoading();
       setIsLoading(false);
     }
   };
@@ -305,7 +378,9 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   };
 
   const loadBooks = async () => {
+    const stopLoading = startLoading('books', 15000);
     setIsLoadingBooks(true);
+    
     try {
       const booksList = await web3Service.getBooks();
       setBooks(booksList);
@@ -316,6 +391,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
         type: "error"
       });
     } finally {
+      stopLoading();
       setIsLoadingBooks(false);
     }
   };
@@ -323,6 +399,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   const handleRemoveBook = async () => {
     if (!selectedBookToRemove) return;
     
+    const stopLoading = startLoading('removeBook', 20000);
     setIsLoading(true);
     
     try {
@@ -360,6 +437,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       });
       
     } finally {
+      stopLoading();
       setIsLoading(false);
     }
   };
@@ -532,21 +610,610 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     );
   };
 
-  // Fonction pour charger les livres masqués
-  const loadHiddenBooks = useCallback(() => {
-    try {
-      const hiddenBooksData = localStorage.getItem('hidden_books');
-      if (hiddenBooksData) {
-        setHiddenBooks(JSON.parse(hiddenBooksData));
+  // Formatage de l'adresse d'administrateur avec gestion du timeout
+  const useFormattedAdmin = (address) => {
+    const [formattedAddress, setFormattedAddress] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
+    
+    useEffect(() => {
+      if (!address) {
+        setFormattedAddress('Inconnu');
+        setIsLoading(false);
+        return;
       }
+      
+      if (address === web3Service.account) {
+        setFormattedAddress('Vous');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Formater immédiatement l'adresse pour éviter l'affichage "Chargement en cours..."
+      setFormattedAddress(`${address.substring(0, 6)}...${address.substring(address.length - 4)}`);
+      
+      // Définir un timeout pour terminer l'état de chargement
+      const timeoutId = setTimeout(() => {
+        if (isLoading) {
+          setIsLoading(false);
+        }
+      }, 500); // Réduire le timeout à 500ms
+      
+      // Fonction pour formater l'adresse et mettre fin à l'état de chargement
+      const formatWithDelay = () => {
+        try {
+          // L'adresse est déjà formatée, juste terminer le chargement
+          setIsLoading(false);
+        } catch (error) {
+          console.error("Erreur lors du formatage de l'adresse", error);
+          setFormattedAddress('Adresse invalide');
+          setIsLoading(false);
+        }
+      };
+      
+      // Utiliser requestAnimationFrame pour une meilleure performance
+      requestAnimationFrame(() => {
+        formatWithDelay();
+      });
+      
+      return () => {
+        clearTimeout(timeoutId);
+      };
+    }, [address]);
+    
+    return { formattedAddress, isLoading };
+  };
+
+  // Composant pour afficher les livres masqués
+  const HiddenBooksPanel = ({ books, onRestore, isRestoring }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [sortBy, setSortBy] = useState('date');
+    const [sortOrder, setSortOrder] = useState('desc');
+    const [adminFilter, setAdminFilter] = useState('all');
+    const [confirmingBook, setConfirmingBook] = useState(null);
+    const [restoringId, setRestoringId] = useState(null);
+    const [showOnlyMine, setShowOnlyMine] = useState(localStorage.getItem('show_only_current_admin_books') === 'true');
+    const [adminLoadingState, setAdminLoadingState] = useState({}); 
+
+    // Gérer le changement de préférence pour afficher seulement les livres de l'admin actuel
+    const handleShowOnlyMineChange = (value) => {
+      setShowOnlyMine(value);
+      localStorage.setItem('show_only_current_admin_books', value ? 'true' : 'false');
+      // Recharger les livres masqués avec les nouvelles préférences
+      setTimeout(() => loadHiddenBooks(), 100);
+    };
+
+    // Récupérer la liste des administrateurs uniques
+    const uniqueAdmins = [...new Set(books.map(book => book.hiddenBy))];
+
+    // Filtrer par terme de recherche et par administrateur
+    const filteredBooks = books.filter(book => 
+      (book.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       book.author?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       book.id?.toString().includes(searchTerm)) &&
+      (adminFilter === 'all' || book.hiddenBy === adminFilter)
+    );
+
+    const sortedBooks = [...filteredBooks].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'date') {
+        comparison = new Date(b.hiddenAt) - new Date(a.hiddenAt);
+      } else if (sortBy === 'title') {
+        comparison = a.title.localeCompare(b.title);
+      } else if (sortBy === 'author') {
+        comparison = a.author.localeCompare(b.author);
+      } else if (sortBy === 'id') {
+        comparison = a.id - b.id;
+      }
+      return sortOrder === 'asc' ? comparison * -1 : comparison;
+    });
+
+    // Gérer l'en-tête des colonnes cliquables pour le tri
+    const handleSort = (column) => {
+      if (sortBy === column) {
+        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+      } else {
+        setSortBy(column);
+        setSortOrder('asc');
+      }
+    };
+
+    // Formater l'adresse de l'administrateur avec gestion du chargement
+    const formatAdminAddress = (address) => {
+      if (!address) return 'Inconnu';
+      if (address === web3Service.account) return 'Vous';
+      
+      // Formater directement l'adresse pour éviter le message de chargement
+      const shortAddress = `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+      
+      // Vérifier si on a déjà formaté cette adresse
+      if (!adminLoadingState[address]) {
+        // Marquer cette adresse comme en cours de formatage
+        setAdminLoadingState(prev => ({ ...prev, [address]: true }));
+        
+        // Définir un timeout court pour terminer l'état de chargement
+        setTimeout(() => {
+          setAdminLoadingState(prev => ({ ...prev, [address]: false }));
+        }, 300);
+      }
+      
+      return shortAddress;
+    };
+
+    // Fonction pour lancer la procédure de restauration
+    const handleRestoreAction = (bookId) => {
+      // Si déjà en cours de restauration, ne rien faire
+      if (restoringId !== null) return;
+
+      // Trouver le livre
+      const book = books.find(b => b.id === bookId);
+      if (!book) return;
+
+      // Demander confirmation
+      setConfirmingBook(book);
+    };
+
+    // Fonction pour confirmer la restauration
+    const confirmRestore = async () => {
+      if (!confirmingBook) return;
+      
+      try {
+        setRestoringId(confirmingBook.id);
+        setConfirmingBook(null);
+        
+        // Vérifier si le livre existe dans le contrat avec un timeout
+        let livreDansContrat = false;
+        try {
+          // Créer une promesse avec timeout
+          const checkPromise = Promise.race([
+            web3Service.doesBookExist(confirmingBook.id),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout dépassé')), 3000))
+          ]);
+          
+          livreDansContrat = await checkPromise;
+        } catch (error) {
+          console.warn("Erreur ou timeout lors de la vérification de l'existence du livre:", error.message);
+          // En cas d'erreur, supposer que le livre n'existe pas pour continuer le processus
+        }
+        
+        if (!livreDansContrat) {
+          // Informer l'utilisateur que le livre n'existe plus sur la blockchain
+          setNotification({
+            message: `Le livre "${confirmingBook.title}" n'existe plus sur la blockchain mais sera retiré de la liste.`,
+            type: "warning"
+          });
+        }
+        
+        // Appeler la fonction de restauration
+        await onRestore(confirmingBook.id);
+      } finally {
+        setRestoringId(null);
+      }
+    };
+
+    // Rendu du panneau
+    return (
+      <div className={`fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 transition-opacity duration-300 ${showHiddenBooks ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div className={`bg-white rounded-lg shadow-xl w-11/12 max-w-4xl max-h-[90vh] overflow-hidden transition-transform duration-300 transform ${showHiddenBooks ? 'translate-y-0' : 'translate-y-10'}`}>
+          <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+            <h3 className="text-lg font-semibold text-indigo-700 flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z" />
+                <path fillRule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clipRule="evenodd" />
+              </svg>
+              Livres masqués <span className="ml-2 px-2 py-0.5 bg-indigo-100 text-indigo-800 text-xs rounded-full">{books.length}</span>
+            </h3>
+            <button 
+              onClick={() => setShowHiddenBooks(false)}
+              className="text-gray-500 hover:text-gray-700 transition-colors p-1 rounded-full hover:bg-gray-100"
+              aria-label="Fermer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="p-6">
+            {/* Barre de recherche et filtres */}
+            <div className="mb-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="relative flex-1">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Rechercher par titre, auteur ou ID..."
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <div className="text-sm text-gray-500 whitespace-nowrap">
+                  {filteredBooks.length === 0 
+                    ? 'Aucun livre trouvé' 
+                    : `${filteredBooks.length} livre${filteredBooks.length > 1 ? 's' : ''} trouvé${filteredBooks.length > 1 ? 's' : ''}`}
+                </div>
+              </div>
+
+              {/* Option pour afficher seulement les livres masqués par l'admin actuel */}
+              <div className="flex items-center">
+                <label className="inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="form-checkbox h-4 w-4 text-indigo-600 transition duration-150 ease-in-out"
+                    checked={showOnlyMine}
+                    onChange={(e) => handleShowOnlyMineChange(e.target.checked)}
+                  />
+                  <span className="ml-2 text-sm text-gray-700">Afficher uniquement mes livres masqués</span>
+                </label>
+                
+                <div className="ml-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full">
+                  {showOnlyMine ? "Mode administrateur actuel" : "Tous les administrateurs"}
+                </div>
+              </div>
+
+              {uniqueAdmins.length > 1 && !showOnlyMine && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-sm text-gray-500">Administrateur:</span>
+                  <button
+                    onClick={() => setAdminFilter('all')}
+                    className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                      adminFilter === 'all' 
+                        ? 'bg-indigo-100 text-indigo-800' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Tous
+                  </button>
+                  {uniqueAdmins.map(admin => (
+                    <button
+                      key={admin}
+                      onClick={() => setAdminFilter(admin)}
+                      className={`px-2 py-1 text-xs rounded-full transition-colors ${
+                        adminFilter === admin 
+                          ? 'bg-indigo-100 text-indigo-800' 
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {formatAdminAddress(admin)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {books.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="mx-auto w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-indigo-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-medium text-gray-900 mb-2">
+                  {showOnlyMine 
+                    ? "Vous n'avez masqué aucun livre" 
+                    : "Aucun livre masqué"}
+                </h4>
+                <p className="text-gray-500 max-w-md mx-auto">
+                  {showOnlyMine 
+                    ? "Lorsque vous masquerez des livres du catalogue, ils apparaîtront ici."
+                    : "Lorsque des livres seront masqués du catalogue, ils apparaîtront ici et pourront être restaurés."}
+                </p>
+                {showOnlyMine && (
+                  <button 
+                    onClick={() => handleShowOnlyMineChange(false)}
+                    className="mt-4 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 transition-colors"
+                  >
+                    Afficher tous les livres masqués
+                  </button>
+                )}
+              </div>
+            ) : filteredBooks.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="mx-auto w-24 h-24 bg-yellow-50 rounded-full flex items-center justify-center mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-yellow-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-medium text-gray-900 mb-2">Aucun résultat pour "{searchTerm}"</h4>
+                <p className="text-gray-500">Essayez avec d'autres termes de recherche ou changez de filtre.</p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <button 
+                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium px-3 py-1 bg-indigo-50 rounded-md"
+                    onClick={() => setSearchTerm('')}
+                  >
+                    Effacer la recherche
+                  </button>
+                  {adminFilter !== 'all' && (
+                    <button 
+                      className="text-indigo-600 hover:text-indigo-800 text-sm font-medium px-3 py-1 bg-indigo-50 rounded-md"
+                      onClick={() => setAdminFilter('all')}
+                    >
+                      Voir tous les administrateurs
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-md border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th 
+                        scope="col" 
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('id')}
+                      >
+                        <div className="flex items-center">
+                          ID
+                          {sortBy === 'id' && (
+                            <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        scope="col" 
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('title')}
+                      >
+                        <div className="flex items-center">
+                          Titre
+                          {sortBy === 'title' && (
+                            <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        scope="col" 
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('author')}
+                      >
+                        <div className="flex items-center">
+                          Auteur
+                          {sortBy === 'author' && (
+                            <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </div>
+                      </th>
+                      {!showOnlyMine && (
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Admin
+                        </th>
+                      )}
+                      <th 
+                        scope="col" 
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                        onClick={() => handleSort('date')}
+                      >
+                        <div className="flex items-center">
+                          Masqué le
+                          {sortBy === 'date' && (
+                            <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                          )}
+                        </div>
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sortedBooks.map((book) => (
+                      <tr key={book.id} className={`hover:bg-gray-50 transition-colors ${restoringId === book.id ? 'bg-green-50' : ''}`}>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-indigo-600">
+                          #{book.id}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{book.title}</div>
+                          {book.reason && (
+                            <div className="text-xs text-gray-500 italic">
+                              Raison: {book.reason}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="text-sm text-gray-500">{book.author}</div>
+                        </td>
+                        {!showOnlyMine && (
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-sm text-gray-500">
+                              {book.hiddenBy === web3Service.account ? (
+                                <span className="text-indigo-600 font-medium">Vous</span>
+                              ) : (
+                                formatAdminAddress(book.hiddenBy)
+                              )}
+                            </div>
+                          </td>
+                        )}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="text-sm text-gray-500">
+                            {new Date(book.hiddenAt).toLocaleDateString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {(() => {
+                              const hiddenDate = new Date(book.hiddenAt);
+                              const now = new Date();
+                              const diffTime = Math.abs(now - hiddenDate);
+                              const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                              
+                              if (diffDays === 0) return 'Aujourd\'hui';
+                              if (diffDays === 1) return 'Hier';
+                              if (diffDays < 7) return `Il y a ${diffDays} jours`;
+                              if (diffDays < 30) return `Il y a ${Math.floor(diffDays / 7)} semaines`;
+                              return `Il y a ${Math.floor(diffDays / 30)} mois`;
+                            })()}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
+                          {restoringId === book.id ? (
+                            <div className="inline-flex items-center px-2.5 py-1.5 rounded-md bg-green-50 text-green-700 border border-green-100">
+                              <svg className="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              <span>Restauration...</span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleRestoreAction(book.id)}
+                              disabled={isRestoring || restoringId !== null}
+                              className={`relative overflow-hidden group text-indigo-600 hover:text-indigo-900 inline-flex items-center transition-all bg-white hover:bg-indigo-50 px-2.5 py-1.5 rounded-md border border-gray-200 hover:border-indigo-100 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                                isRestoring || restoringId !== null ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                              title="Restaurer ce livre"
+                            >
+                              <span className="absolute inset-0 w-0 bg-indigo-50 transition-all duration-200 ease-out group-hover:w-full"></span>
+                              <svg xmlns="http://www.w3.org/2000/svg" className="relative h-4 w-4 mr-1.5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                              </svg>
+                              <span className="relative">Restaurer</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          
+          <div className="border-t border-gray-200 px-6 py-4 flex justify-end">
+            <button
+              className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+              onClick={() => setShowHiddenBooks(false)}
+            >
+              Fermer
+            </button>
+          </div>
+
+          {/* Modal de confirmation pour la restauration */}
+          {confirmingBook && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+              <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 transform transition-all">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Restaurer ce livre ?</h3>
+                <div className="bg-gray-50 rounded-md p-4 mb-4">
+                  <p className="text-gray-700"><span className="font-medium">Titre :</span> {confirmingBook.title}</p>
+                  <p className="text-gray-700 mt-1"><span className="font-medium">Auteur :</span> {confirmingBook.author}</p>
+                  {confirmingBook.reason && (
+                    <p className="text-gray-700 mt-1"><span className="font-medium">Raison du masquage :</span> {confirmingBook.reason}</p>
+                  )}
+                </div>
+                <p className="text-gray-600 mb-6">
+                  Ce livre sera à nouveau visible dans le catalogue et disponible pour l'emprunt. Voulez-vous continuer ?
+                </p>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setConfirmingBook(null)}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={confirmRestore}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  >
+                    Confirmer la restauration
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Afficher un message si l'utilisateur n'est pas administrateur
+  if (!isCheckingAdmin && !isAdmin) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg shadow-md">
+          <div className="flex items-center">
+            <ShieldAlert size={24} className="text-red-500 mr-3" />
+            <h2 className="text-xl font-bold text-red-700">Accès non autorisé</h2>
+          </div>
+          <p className="mt-3 text-red-600">
+            Seuls les administrateurs peuvent accéder à cette section. Si vous pensez que c'est une erreur, veuillez vérifier que :
+          </p>
+          <ul className="list-disc list-inside mt-2 text-red-600">
+            <li>Vous êtes connecté au compte MetaMask correct</li>
+            <li>Votre compte a bien les droits d'administrateur</li>
+            <li>Vous êtes connecté au bon réseau blockchain</li>
+          </ul>
+          <button 
+            className="mt-4 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition flex items-center"
+            onClick={checkAdminStatus}
+          >
+            <RefreshCw size={16} className="mr-2" />
+            Vérifier à nouveau
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Composant UI pour afficher l'indicateur de chargement global
+  const LoadingIndicator = () => {
+    const isAnyLoading = Object.values(loadingStates).some(state => state) || isLoading;
+    
+    if (!isAnyLoading) return null;
+    
+    return (
+      <div className="fixed inset-0 flex items-center justify-center z-[9999] pointer-events-none">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-6 py-4 flex items-center space-x-4 pointer-events-auto">
+          <div className="text-[#6A1B9A]">
+            <Loader className="h-6 w-6 animate-spin" />
+          </div>
+          <div>
+            <p className="text-gray-700 font-medium">Traitement en cours</p>
+            <p className="text-xs text-gray-500 mt-1">Un moment, s'il vous plaît...</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Chargement des livres masqués
+  const loadHiddenBooks = async () => {
+    try {
+      // Récupérer les livres masqués depuis le localStorage
+      const hiddenBooksLS = JSON.parse(localStorage.getItem('hidden_books') || '[]');
+      
+      // Filtrer les livres si l'option "Afficher uniquement mes livres masqués" est activée
+      const showOnlyMine = localStorage.getItem('show_only_current_admin_books') === 'true';
+      const filteredBooks = showOnlyMine 
+        ? hiddenBooksLS.filter(book => book.hiddenBy === web3Service.account)
+        : hiddenBooksLS;
+      
+      setHiddenBooks(filteredBooks);
     } catch (error) {
-      console.error("Erreur lors du chargement des livres masqués:", error);
+      console.error("Erreur lors du chargement des livres masqués", error);
+      setNotification({
+        message: "Impossible de charger les livres masqués",
+        type: "error"
+      });
     }
-  }, []);
+  };
 
   // Fonction pour restaurer un livre masqué
   const handleRestoreBook = async (bookId) => {
+    let stopLoadingFn;
     try {
+      // Démarrer l'indicateur de chargement si la fonction startLoading existe
+      if (typeof startLoading === 'function') {
+        stopLoadingFn = startLoading('removeBook', 15000);
+      }
+      
       console.log(`Tentative de restauration du livre #${bookId}`);
       setIsLoading(true);
       
@@ -588,13 +1255,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       // Si le livre existe sur la blockchain, mettre à jour son statut via le contrat
       if (doesExist) {
         // Si un contrat existe, appeler la méthode pour restaurer le livre
-        if (web3Service.unhideBook) {
-          await web3Service.unhideBook(bookId);
-        } else if (web3Service.restoreHiddenBook) {
-          await web3Service.restoreHiddenBook(bookId);
-        } else if (web3Service.callContractMethod) {
-          await web3Service.callContractMethod('unhideBook', [bookId]);
-        }
+        await web3Service.callContractMethod('unhideBook', [bookId]);
       }
       
       // Afficher une notification de succès
@@ -606,145 +1267,31 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       // Recharger la liste des livres
       await loadBooks();
       
-      // Définir le succès pour l'interface
-      setSuccess(`Le livre "${bookToRestore.title}" a été restauré avec succès`);
-      setTimeout(() => setSuccess(null), 3000);
-      
     } catch (error) {
       console.error("Erreur lors de la restauration du livre", error);
       setNotification({
         message: `Erreur lors de la restauration du livre: ${error.message || 'Erreur inconnue'}`,
         type: "error"
       });
-      
-      // Définir l'erreur pour l'interface
-      setError(`Erreur lors de la restauration du livre: ${error.message}`);
-      setTimeout(() => setError(null), 3000);
     } finally {
       setIsLoading(false);
+      
+      // Arrêter l'indicateur de chargement si la fonction existe
+      if (typeof stopLoadingFn === 'function') {
+        try {
+          stopLoadingFn();
+        } catch (err) {
+          console.warn('Erreur lors de l\'arrêt de l\'indicateur de chargement:', err);
+        }
+      }
     }
   };
-  
-  // Charger les livres masqués au chargement du composant
-  useEffect(() => {
-    loadHiddenBooks();
-  }, [loadHiddenBooks]);
-
-  // Composant pour afficher les livres masqués
-  const HiddenBooksPanel = ({ books, onRestore, isRestoring }) => {
-    return (
-      <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-md font-semibold text-gray-700">Livres masqués ({books.length})</h3>
-          <button 
-            onClick={() => setShowHiddenBooks(false)}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-        
-        {books.length === 0 ? (
-          <p className="text-gray-500 text-center py-4">Aucun livre masqué</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Titre
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Auteur
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date de masquage
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {books.map((book) => (
-                  <tr key={book.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                      {book.id}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{book.title}</div>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">{book.author}</div>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        {new Date(book.hiddenAt).toLocaleString()}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => onRestore(book.id)}
-                        disabled={isRestoring}
-                        className="text-indigo-600 hover:text-indigo-900 flex items-center"
-                        title="Restaurer ce livre"
-                      >
-                        {isRestoring ? (
-                          <div className="w-4 h-4 mr-1 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                        Restaurer
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // Afficher un message si l'utilisateur n'est pas administrateur
-  if (!isCheckingAdmin && !isAdmin) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg shadow-md">
-          <div className="flex items-center">
-            <ShieldAlert size={24} className="text-red-500 mr-3" />
-            <h2 className="text-xl font-bold text-red-700">Accès non autorisé</h2>
-          </div>
-          <p className="mt-3 text-red-600">
-            Seuls les administrateurs peuvent accéder à cette section. Si vous pensez que c'est une erreur, veuillez vérifier que :
-          </p>
-          <ul className="list-disc list-inside mt-2 text-red-600">
-            <li>Vous êtes connecté au compte MetaMask correct</li>
-            <li>Votre compte a bien les droits d'administrateur</li>
-            <li>Vous êtes connecté au bon réseau blockchain</li>
-          </ul>
-          <button 
-            className="mt-4 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition flex items-center"
-            onClick={checkAdminStatus}
-          >
-            <RefreshCw size={16} className="mr-2" />
-            Vérifier à nouveau
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Indicateur de chargement global */}
+      <LoadingIndicator />
+      
       <h1 className="text-2xl font-bold text-[#6A1B9A] mb-6">Administration</h1>
 
       {/* Admin Status Banner */}
@@ -760,7 +1307,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       {/* IPFS Connection Status */}
       <div className="mb-6 bg-white p-4 rounded-lg shadow flex items-center justify-between">
         <div className="flex items-center">
-          {ipfsStatus.checking ? (
+          {loadingStates.ipfs ? (
             <div className="w-5 h-5 mr-3 border-2 border-[#6A1B9A] border-t-transparent rounded-full animate-spin"></div>
           ) : ipfsStatus.connected ? (
             <Wifi size={20} className="text-green-500 mr-3" />
@@ -768,14 +1315,20 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
             <WifiOff size={20} className="text-red-500 mr-3" />
           )}
           <span className="font-medium">
-            Statut IPFS: {ipfsStatus.checking ? 'Vérification...' : ipfsStatus.connected ? 'Connecté' : 'Déconnecté'}
+            Statut IPFS: {loadingStates.ipfs ? 'Vérification...' : ipfsStatus.connected ? 'Connecté' : 'Déconnecté'}
           </span>
         </div>
         <div className="flex space-x-2">
           <button
-            className="bg-[#6A1B9A] text-white px-3 py-1.5 rounded text-sm hover:bg-[#590D88] transition"
+            className="bg-[#6A1B9A] text-white px-3 py-1.5 rounded text-sm hover:bg-[#590D88] transition flex items-center"
             onClick={checkIPFSConnection}
+            disabled={loadingStates.ipfs}
           >
+            {loadingStates.ipfs ? (
+              <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            ) : (
+              <RefreshCw size={16} className="mr-1" />
+            )}
             Vérifier la connexion
           </button>
           <button
@@ -1130,39 +1683,6 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
                 )}
               </button>
             )}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
-        <div className="px-6 py-4 border-b border-gray-200 bg-[#6A1B9A]/5">
-          <h2 className="text-lg font-semibold text-[#6A1B9A]">Statistiques de la Bibliothèque</h2>
-        </div>
-
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="border rounded-lg p-4">
-              <h3 className="text-md font-semibold text-gray-700 mb-3">Emprunts par Jour</h3>
-              <div className="h-48 bg-[#F8F9FA] rounded-md flex items-center justify-center">
-                <p className="text-gray-500 text-sm">Graphique des emprunts journaliers</p>
-              </div>
-            </div>
-
-            <div className="border rounded-lg p-4">
-              <h3 className="text-md font-semibold text-gray-700 mb-3">Distribution des Réputations</h3>
-              <div className="h-48 bg-[#F8F9FA] rounded-md flex items-center justify-center">
-                <p className="text-gray-500 text-sm">Graphique de répartition des scores</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end mt-4">
-            <button className="text-[#6A1B9A] hover:underline text-sm flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Exporter les données
-            </button>
           </div>
         </div>
       </div>
