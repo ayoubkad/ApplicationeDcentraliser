@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { User, Book, CheckCircle, ArrowRight, UserPlus, Loader, Shield } from 'lucide-react';
+import React, { useState } from 'react';
+import { User, Book, CheckCircle, ArrowRight, UserPlus, Loader } from 'lucide-react';
 import BookCard from './common/BookCard';
-import web3Service from '../services/Web3Service';
 
-const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, account, connectToMetaMask: propConnectToMetaMask, disconnectWallet, isAdmin = false }) => {
+const recentBooks = [
+  { id: 1, title: "Principes d'Économie", author: "Gregory Mankiw", isAvailable: true, ipfsHash: "QmX...", category: "Économie", pageCount: 528, publishedDate: "2019-05-10", isbn: "978-2-7590-2369-1" },
+  { id: 2, title: "Introduction à l'Algorithmique", author: "Thomas Cormen", isAvailable: false, ipfsHash: "QmY...", category: "Informatique", pageCount: 752, publishedDate: "2015-03-22", isbn: "978-2-1007-2998-7" },
+  { id: 3, title: "Physique Quantique", author: "Claude Cohen-Tannoudji", isAvailable: true, ipfsHash: "QmZ...", category: "Sciences", pageCount: 624, publishedDate: "2018-09-15", isbn: "978-2-1007-1288-0" },
+  { id: 4, title: "Histoire de l'Art", author: "Ernst Gombrich", isAvailable: true, ipfsHash: "QmA...", category: "Art", pageCount: 412, publishedDate: "2020-01-30", isbn: "978-2-0814-1212-2" }
+];
+
+const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, account, connectToMetaMask: propConnectToMetaMask, disconnectWallet }) => {
   const [currentAccount, setCurrentAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [recentBooks, setRecentBooks] = useState([]);
-  const [loadingBooks, setLoadingBooks] = useState(true);
 
   const handleConnectToMetaMask = async () => {
     if (window.ethereum) {
@@ -22,38 +26,6 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
       alert('MetaMask non détecté. Veuillez installer MetaMask pour continuer.');
     }
   };
-
-  // Chargement des livres récemment ajoutés
-  useEffect(() => {
-    const fetchRecentBooks = async () => {
-      try {
-        setLoadingBooks(true);
-        // Charger tous les livres
-        const allBooks = await web3Service.getBooks();
-        
-        if (allBooks && allBooks.length > 0) {
-          // Trier les livres par ID décroissant (pour avoir les plus récents)
-          // Considérant que les IDs plus élevés sont les livres les plus récents
-          const sortedBooks = [...allBooks].sort((a, b) => b.id - a.id);
-          
-          // Prendre les 4 premiers livres (les plus récents)
-          const recent = sortedBooks.slice(0, 4).map(book => ({
-            ...book,
-            addedBy: 'admin', // Tous les livres sont ajoutés par l'admin
-            addedDate: book.addedDate || new Date().toISOString().split('T')[0]
-          }));
-          
-          setRecentBooks(recent);
-        }
-      } catch (error) {
-        console.error('Erreur lors du chargement des livres récents:', error);
-      } finally {
-        setLoadingBooks(false);
-      }
-    };
-
-    fetchRecentBooks();
-  }, []);
 
   const handleRegistration = () => {
     setIsLoading(true);
@@ -105,8 +77,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
       </div>
 
       <div className="container mx-auto px-4 py-4">
-        {/* Bannière d'inscription (jaune) - masquée si l'utilisateur est admin */}
-        {isConnected && !isRegistered && !isAdmin && (
+        {isConnected && !isRegistered && (
           <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 mb-8 rounded-lg shadow-md">
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -147,43 +118,18 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
         <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
           <Book size={26} className="mr-2 text-[#2A3B8C]" />
           Livres récemment ajoutés
-          <span className="ml-2 text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full flex items-center">
-            <Shield size={14} className="mr-1" />
-            Par l'administrateur
-          </span>
         </h2>
-        
-        {loadingBooks ? (
-          <div className="flex justify-center items-center h-40">
-            <Loader className="h-8 w-8 text-[#2A3B8C] animate-spin" />
-            <span className="ml-2 text-gray-600">Chargement des livres...</span>
-          </div>
-        ) : recentBooks.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-            {recentBooks.map(book => (
-              <BookCard 
-                key={book.id} 
-                book={book} 
-                handleBorrowBook={handleBorrowBook}
-                isConnected={isConnected}
-                isRegistered={isRegistered}
-                showAddedBy={true}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="bg-gray-50 p-8 text-center rounded-lg shadow-inner mb-16">
-            <p className="text-gray-500">Aucun livre n'a encore été ajouté à la bibliothèque.</p>
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab('admin')}
-                className="mt-4 px-4 py-2 bg-[#2A3B8C] text-white rounded-md hover:bg-[#1F2D6B] transition"
-              >
-                Ajouter des livres
-              </button>
-            )}
-          </div>
-        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+          {recentBooks.map(book => (
+            <BookCard 
+              key={book.id} 
+              book={book} 
+              handleBorrowBook={handleBorrowBook}
+              isConnected={isConnected}
+              isRegistered={isRegistered}
+            />
+          ))}
+        </div>
 
         <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
           <CheckCircle size={26} className="mr-2 text-[#2A3B8C]" />
@@ -196,8 +142,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             </div>
             <h3 className="text-xl font-bold text-gray-800 mb-3">1. Inscrivez-vous</h3>
             <p className="text-gray-600">Connectez votre portefeuille et inscrivez-vous comme étudiant ou professeur.</p>
-            {/* Bouton S'inscrire - masqué si l'utilisateur est admin */}
-            {isConnected && !isRegistered && !isAdmin && (
+            {isConnected && !isRegistered && (
               <button
                 className="mt-4 px-4 py-2 text-sm bg-yellow-100 text-yellow-800 rounded-md hover:bg-yellow-200 transition"
                 onClick={() => setActiveTab('login')}
@@ -222,8 +167,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
           </div>
         </div>
 
-        {/* Section d'incitation à l'inscription (bleue) - masquée si l'utilisateur est admin */}
-        {(!isConnected || !isRegistered) && !isAdmin && (
+        {(!isConnected || !isRegistered) && (
           <div className="bg-gradient-to-r from-blue-800 to-indigo-800 text-white rounded-lg shadow-md p-8 mt-4 mb-8">
             <h2 className="text-2xl font-bold mb-3">Prêt à emprunter des livres ?</h2>
             <p className="mb-6 text-lg">L'inscription est rapide et vous donne un accès immédiat à notre bibliothèque entière.</p>
