@@ -547,25 +547,77 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   // Fonction pour restaurer un livre masqué
   const handleRestoreBook = async (bookId) => {
     try {
+      console.log(`Tentative de restauration du livre #${bookId}`);
       setIsLoading(true);
+      
       // Trouver le livre dans la liste des livres masqués
       const bookToRestore = hiddenBooks.find(book => book.id === bookId);
       if (!bookToRestore) {
-        throw new Error("Livre non trouvé");
+        console.error(`Livre #${bookId} non trouvé dans la liste des livres masqués`);
+        setNotification({
+          message: "Erreur: Livre introuvable",
+          type: "error"
+        });
+        return;
       }
-
-      // Appeler le contrat pour restaurer le livre (si nécessaire)
-      await web3Service.restoreHiddenBook(bookId);
-
-      // Mettre à jour le stockage local
-      const updatedHiddenBooks = hiddenBooks.filter(book => book.id !== bookId);
-      localStorage.setItem('hidden_books', JSON.stringify(updatedHiddenBooks));
-      setHiddenBooks(updatedHiddenBooks);
       
+      // Vérifier si le livre existe toujours dans le contrat
+      let doesExist = false;
+      try {
+        doesExist = await web3Service.doesBookExist(bookId);
+      } catch (error) {
+        console.warn(`Erreur lors de la vérification de l'existence du livre #${bookId}:`, error);
+      }
+      
+      if (!doesExist) {
+        console.warn(`Le livre avec l'ID ${bookId} n'existe pas ou a été supprimé du contrat.`);
+        setNotification({
+          message: `Attention: Le livre "${bookToRestore.title}" n'existe plus sur la blockchain mais sera retiré de la liste des livres masqués.`,
+          type: "warning"
+        });
+      }
+      
+      // Supprimer le livre de la liste des livres masqués dans le localStorage
+      const hiddenBooksLS = JSON.parse(localStorage.getItem('hidden_books') || '[]');
+      const updatedHiddenBooks = hiddenBooksLS.filter(book => book.id !== bookId);
+      localStorage.setItem('hidden_books', JSON.stringify(updatedHiddenBooks));
+      
+      // Mettre à jour l'état local
+      setHiddenBooks(prevBooks => prevBooks.filter(book => book.id !== bookId));
+      
+      // Si le livre existe sur la blockchain, mettre à jour son statut via le contrat
+      if (doesExist) {
+        // Si un contrat existe, appeler la méthode pour restaurer le livre
+        if (web3Service.unhideBook) {
+          await web3Service.unhideBook(bookId);
+        } else if (web3Service.restoreHiddenBook) {
+          await web3Service.restoreHiddenBook(bookId);
+        } else if (web3Service.callContractMethod) {
+          await web3Service.callContractMethod('unhideBook', [bookId]);
+        }
+      }
+      
+      // Afficher une notification de succès
+      setNotification({
+        message: `Le livre "${bookToRestore.title}" a été restauré avec succès${!doesExist ? ' (supprimé de la liste uniquement)' : ''}`,
+        type: "success"
+      });
+      
+      // Recharger la liste des livres
+      await loadBooks();
+      
+      // Définir le succès pour l'interface
       setSuccess(`Le livre "${bookToRestore.title}" a été restauré avec succès`);
       setTimeout(() => setSuccess(null), 3000);
+      
     } catch (error) {
-      console.error("Erreur lors de la restauration du livre:", error);
+      console.error("Erreur lors de la restauration du livre", error);
+      setNotification({
+        message: `Erreur lors de la restauration du livre: ${error.message || 'Erreur inconnue'}`,
+        type: "error"
+      });
+      
+      // Définir l'erreur pour l'interface
       setError(`Erreur lors de la restauration du livre: ${error.message}`);
       setTimeout(() => setError(null), 3000);
     } finally {
