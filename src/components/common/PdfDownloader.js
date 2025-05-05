@@ -42,7 +42,7 @@ const PdfDownloader = () => {
     setIsLoading(true);
     setProgress(0);
     
-    // Utiliser un toast persistant pour montrer la progression
+    // Utiliser un toast persistant pour montrer la progression, mais avec une durée maximale
     const loadingToastId = toast.loading(
       <div>
         <div className="font-medium">Téléchargement en cours...</div>
@@ -54,12 +54,23 @@ const PdfDownloader = () => {
         </div>
         <div className="text-xs mt-1 text-gray-500">{progress}% complété</div>
       </div>,
-      { duration: Infinity }
+      { duration: 30000 } // Timeout de 30 secondes
     );
+    
+    // Timer de sécurité supplémentaire pour s'assurer que le toast disparaît
+    const safetyTimer = setTimeout(() => {
+      toast.dismiss(loadingToastId);
+      toast.error('Le téléchargement prend plus de temps que prévu. Veuillez réessayer ou utiliser un lien direct.', {
+        duration: 5000
+      });
+    }, 45000); // 45 secondes
     
     try {
       // Utiliser le service IPFS pour télécharger le PDF
       const result = await ipfsService.downloadPDF(trimmedCid, fileName);
+      
+      // Annuler le timer de sécurité
+      clearTimeout(safetyTimer);
       
       // Signaler que le téléchargement est terminé
       setProgress(100);
@@ -75,6 +86,11 @@ const PdfDownloader = () => {
       }
     } catch (error) {
       console.error('Erreur de téléchargement:', error);
+      
+      // Annuler le timer de sécurité
+      clearTimeout(safetyTimer);
+      
+      // Fermer le toast de chargement
       toast.dismiss(loadingToastId);
       
       // Créer des URLs alternatives pour un accès direct

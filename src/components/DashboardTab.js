@@ -459,20 +459,33 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
   }, []);
 
   const handleDownload = async (loan) => {
-    if (!loan.pdfHash) {
+    // Vérifier si le CID existe
+    const cid = loan.pdfCid || loan.pdfHash;
+    if (!cid) {
       toast.error("Ce livre n'est pas disponible au téléchargement.");
       return;
     }
 
-    const cid = loan.pdfHash.startsWith('ipfs://') ? loan.pdfHash.substring(7) : loan.pdfHash;
-
+    // Vérifier si le CID a un format valide
     if (!isValidCid(cid)) {
       toast.error("Le CID IPFS est invalide.");
       return;
     }
 
-    const loadingToastId = toast.loading("Chargement en cours...");
+    // Créer un toast avec timeout automatique pour éviter qu'il reste bloqué
+    const loadingToastId = toast.loading("Chargement en cours...", {
+      duration: 30000 // Auto-dismiss après 30 secondes maximum
+    });
+    
     const startTime = performance.now();
+
+    // Créer un timer de sécurité pour s'assurer que le toast est fermé même en cas d'erreur
+    const safetyTimer = setTimeout(() => {
+      toast.dismiss(loadingToastId);
+      toast.error("Le téléchargement a pris trop de temps. Veuillez réessayer.", {
+        duration: 5000
+      });
+    }, 45000); // 45 secondes de timeout
 
     try {
       const result = await downloadPdfFromIPFS(cid);
@@ -494,12 +507,21 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       triggerDownload(result, `${loan.title}.pdf`);
 
       const downloadTime = ((performance.now() - startTime) / 1000).toFixed(2);
+      
+      // Annuler le timer de sécurité car l'opération a réussi
+      clearTimeout(safetyTimer);
+      
       toast.success(`Chargement terminé en ${downloadTime}s !`, {
         id: loadingToastId,
         duration: 3000
       });
     } catch (error) {
       console.error("Erreur lors du téléchargement:", error);
+      
+      // Annuler le timer de sécurité
+      clearTimeout(safetyTimer);
+      
+      // Fermer le toast de chargement
       toast.dismiss(loadingToastId);
       
       // Utilisation spécifique des informations d'erreur enrichies si disponibles

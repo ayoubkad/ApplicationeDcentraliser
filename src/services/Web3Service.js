@@ -17,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x71B375CC13cc523C924e59e9ea7EA056639F808e', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x71B375CC13cc523C924e59e9ea7EA056639F808e'  // Ganache - Adresse déployée
+      1337: '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -29,7 +29,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x71B375CC13cc523C924e59e9ea7EA056639F808e';
+    this.contractAddress = '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -1118,6 +1118,12 @@ class Web3Service {
 
   async getBook(bookId) {
     try {
+      // Vérifier si l'ID du livre est valide
+      if (bookId === undefined || bookId === null) {
+        console.error("getBook: ID du livre non défini ou null");
+        throw new Error("ID du livre requis pour récupérer les détails du livre");
+      }
+      
       console.log(`Récupération du livre avec ID: ${bookId}`);
       
       // Vérifier si le service est initialisé
