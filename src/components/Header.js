@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut } from 'lucide-react';
+import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut, History } from 'lucide-react';
 import web3Service from '../services/Web3Service';
 
-const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet, showNotification, userReputation }) => {
+const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet, showNotification, userReputation, isAdmin }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   // Fermer le menu de compte lorsqu'on clique ailleurs
   React.useEffect(() => {
@@ -68,25 +67,6 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
     console.log("- isRegistered:", isRegistered);
     console.log("- Bouton S'inscrire doit apparaître:", account && !isRegistered);
   };
-
-  // Vérifier si l'utilisateur est administrateur au chargement et lorsque le compte change
-  useEffect(() => {
-    const checkIfAdmin = async () => {
-      if (isConnected && account) {
-        try {
-          const admin = await web3Service.isAdmin();
-          setIsAdmin(admin);
-        } catch (error) {
-          console.error("Erreur lors de la vérification des droits admin:", error);
-          setIsAdmin(false);
-        }
-      } else {
-        setIsAdmin(false);
-      }
-    };
-    
-    checkIfAdmin();
-  }, [isConnected, account]);
 
   // Afficher l'adresse du compte de manière abrégée
   const formatAddress = (address) => {
@@ -204,39 +184,60 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                           {isAdmin && <span className="ml-2 bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded text-xs">Admin</span>}
                         </div>
                         <hr className="my-1" />
-                        {/* Afficher "Mon Espace" seulement si pas admin */}
-                        {!isAdmin && (
-                          <button
-                            onClick={() => setActiveTab('dashboard')}
-                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            Mon Espace
-                          </button>
+                        
+                        {/* Options de menu conditionnelles selon le rôle */}
+                        {isAdmin ? (
+                          <>
+                            {/* Options réservées aux administrateurs */}
+                            <button
+                              onClick={() => setActiveTab('admin')}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              <Settings size={16} className="inline mr-2 text-purple-600" />
+                              Panel d'administration
+                            </button>
+                            <button
+                              onClick={() => setActiveTab('transactions')}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              <History size={16} className="inline mr-2 text-purple-600" />
+                              Journal des transactions
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {/* Options pour les utilisateurs normaux */}
+                            <button
+                              onClick={() => setActiveTab('dashboard')}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              <LayoutDashboard size={16} className="inline mr-2 text-blue-600" />
+                              Mon Espace
+                            </button>
+                            
+                            {/* Afficher "S'inscrire" seulement si pas inscrit */}
+                            {!isRegistered && (
+                              <button
+                                onClick={() => setActiveTab('login')}
+                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                              >
+                                <User size={16} className="inline mr-2 text-yellow-600" />
+                                S'inscrire
+                              </button>
+                            )}
+                          </>
                         )}
                         
-                        {/* Afficher "S'inscrire" seulement si pas inscrit et pas admin */}
-                        {!isRegistered && !isAdmin && (
-                          <button
-                            onClick={() => setActiveTab('login')}
-                            className="block w-full text-left px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
-                          >
-                            S'inscrire
-                          </button>
-                        )}
-                        
-                        {/* Bouton de déconnexion */}
+                        <hr className="my-1" />
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             disconnectWallet();
-                            setShowAccountMenu(false);
                           }}
-                          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 border-t"
+                          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                         >
-                          <div className="flex items-center">
-                            <LogOut size={16} className="mr-2" />
-                            Déconnecter
-                          </div>
+                          <LogOut size={16} className="inline mr-2" />
+                          Déconnecter
                         </button>
                       </div>
                     )}

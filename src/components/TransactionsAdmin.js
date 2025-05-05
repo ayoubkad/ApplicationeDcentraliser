@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import web3Service from '../services/Web3Service';
-import { Book, RefreshCw, AlertTriangle, BookOpen, CornerLeftUp, User, Calendar, Hash, Bug, History } from 'lucide-react';
+import { Book, RefreshCw, AlertTriangle, BookOpen, CornerLeftUp, User, Calendar, Hash, Bug, History, X, Info, Database } from 'lucide-react';
 
 const TransactionsAdmin = () => {
   const [transactions, setTransactions] = useState([]);
@@ -10,6 +10,11 @@ const TransactionsAdmin = () => {
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'emprunt', 'retour'
   const [loadingMethod, setLoadingMethod] = useState('events'); // 'events', 'alternative', 'debug'
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [userFilter, setUserFilter] = useState('all'); // 'all', 'current', 'students', 'teachers'
+  const [searchTerm, setSearchTerm] = useState('');
+  const [userRoles, setUserRoles] = useState({}); // Map pour stocker les rôles des utilisateurs
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Vérification admin et premier chargement
   useEffect(() => {
@@ -20,7 +25,11 @@ const TransactionsAdmin = () => {
         setIsAdmin(admin);
         
         if (admin) {
-          await loadTransactions();
+          // Charger les données en parallèle pour améliorer les performances
+          await Promise.all([
+            loadTransactions(),
+            loadUserRoles()
+          ]);
         } else {
           setError("Accès réservé aux administrateurs");
           setIsLoading(false);
@@ -66,12 +75,23 @@ const TransactionsAdmin = () => {
   const addRealTimeTransaction = (type, details) => {
     const { bookId, bookDetails, transaction, oldReputation, newReputation } = details;
     
+    // Vérifier la validité des données reçues
+    if (!bookId) {
+      console.warn("addRealTimeTransaction: bookId manquant", details);
+      return;
+    }
+    
+    // Identifiant unique pour éviter les doublons
+    const transactionId = details.borrowId || 
+                           details.transactionId || 
+                           `${type}-${bookId}-${Date.now()}`;
+    
     // Formater la transaction pour l'affichage
     const newTransaction = {
-      id: details.borrowId || Math.floor(Math.random() * 10000), // ID aléatoire si aucun n'est fourni
+      id: transactionId,
       type: type,
       bookId: bookId,
-      user: web3Service.account,
+      user: details.user || web3Service.account,
       timestamp: new Date().toISOString(),
       livre: {
         title: bookDetails?.title || `Livre #${bookId}`,
@@ -80,8 +100,23 @@ const TransactionsAdmin = () => {
       isRealTime: true // Indicateur que c'est une transaction en temps réel
     };
 
-    // Ajouter en haut de la liste (le tri sera appliqué par filteredTransactions)
-    setTransactions(prev => [newTransaction, ...prev]);
+    // Vérifier si cette transaction n'existe pas déjà dans la liste
+    setTransactions(prev => {
+      // Vérifier si l'ID existe déjà
+      const exists = prev.some(tx => 
+        tx.id === newTransaction.id && 
+        tx.type === newTransaction.type
+      );
+      
+      if (exists) {
+        console.log(`Transaction ${type} avec ID ${transactionId} déjà dans la liste`);
+        return prev;
+      }
+      
+      // Ajouter en haut de la liste (le tri sera appliqué par filteredTransactions)
+      return [newTransaction, ...prev];
+    });
+    
     setLastRefresh(new Date()); // Mise à jour de la date de rafraîchissement
   };
 
@@ -92,76 +127,152 @@ const TransactionsAdmin = () => {
     try {
       // Mode débogage avec données fictives
       if (loadingMethod === 'debug') {
+        console.log("Mode débogage activé, génération de transactions fictives");
         const mockTransactions = generateMockTransactions();
         setTransactions(mockTransactions);
         setIsLoading(false);
         return;
       }
       
-      // Méthode principale: utiliser les événements du contrat
-      if (loadingMethod === 'events') {
+      let allTransactions = [];
+      let methodUsed = '';
+      
+      // Essayer d'abord la méthode directe - nouvelle tentative
+      try {
+        methodUsed = 'direct';
+        console.log("Tentative de récupération directe de toutes les transactions...");
+        
+        // Essayer de récupérer directement toutes les transactions
+        const directTxs = await web3Service.callViewMethod('getAllTransactions', [], {
+          gas: 5000000,
+          timeoutBlocks: 100
+        }).catch(() => null);
+        
+        if (directTxs && Array.isArray(directTxs) && directTxs.length > 0) {
+          console.log("Récupération directe réussie, traitement des transactions:", directTxs.length);
+          
+          // Traitement des transactions directes
+          allTransactions = await Promise.all(directTxs.map(async (tx) => {
+            const bookDetails = await getBookDetails(tx.bookId);
+            return {
+              id: tx.id || tx.borrowId || `tx-${Date.now()}`,
+              type: tx.returned ? 'retour' : 'emprunt',
+              bookId: tx.bookId,
+              user: tx.user,
+              timestamp: new Date(parseInt(tx.timestamp) * 1000).toISOString(),
+              livre: bookDetails
+            };
+          }));
+        } else {
+          console.log("Méthode directe échouée, aucune transaction récupérée");
+          throw new Error("Aucune transaction directe disponible");
+        }
+      } catch (directError) {
+        // Si la méthode directe échoue, essayer avec les événements
         try {
-          const borrowEvents = await web3Service.contract.getPastEvents('BorrowBook', {
-            fromBlock: 0,
-            toBlock: 'latest'
-          });
+          methodUsed = 'events';
+          console.log("Tentative avec les événements du contrat...");
           
-          const returnEvents = await web3Service.contract.getPastEvents('ReturnBook', {
-            fromBlock: 0,
-            toBlock: 'latest'
-          });
-          
-          // Formater et combiner les événements
-          const allTransactions = await formatEventTransactions(borrowEvents, returnEvents);
-          setTransactions(allTransactions);
-          setIsLoading(false);
-          setLastRefresh(new Date());
-          return;
-        } catch (eventsError) {
-          console.error("Erreur lors du chargement des événements:", eventsError);
-          
-          // Si l'erreur indique que les événements n'existent pas, basculer vers la méthode alternative
-          if (eventsError.message && (
-              eventsError.message.includes("doesn't exist") || 
-              eventsError.message.includes("not exist") ||
-              eventsError.message.includes("Event") ||
-              eventsError.message.includes("unknown event")
-          )) {
-            console.log("Événements non trouvés, utilisation de la méthode alternative...");
-            setLoadingMethod('alternative');
-            // Continuer avec la méthode alternative
+          if (loadingMethod === 'events' || loadingMethod === 'alternative') {
+            // Récupérer tous les événements d'emprunt
+            const borrowEvents = await web3Service.contract.getPastEvents('BorrowBook', {
+              fromBlock: 0,
+              toBlock: 'latest'
+            }).catch(e => {
+              console.warn("Erreur lors de la récupération des événements d'emprunt:", e);
+              return [];
+            });
+            
+            // Récupérer tous les événements de retour
+            const returnEvents = await web3Service.contract.getPastEvents('ReturnBook', {
+              fromBlock: 0,
+              toBlock: 'latest'
+            }).catch(e => {
+              console.warn("Erreur lors de la récupération des événements de retour:", e);
+              return [];
+            });
+            
+            console.log(`Événements récupérés: ${borrowEvents.length} emprunts, ${returnEvents.length} retours`);
+            
+            if (borrowEvents.length > 0 || returnEvents.length > 0) {
+              // Si des événements sont trouvés, les formater
+              allTransactions = await formatEventTransactions(borrowEvents, returnEvents);
+              console.log(`Transactions formatées à partir des événements: ${allTransactions.length}`);
+            } else {
+              // Si aucun événement n'est trouvé, passer à la méthode alternative
+              throw new Error("Aucun événement trouvé");
+            }
           } else {
-            // Pour les autres erreurs, arrêter et afficher l'erreur
-            throw eventsError;
+            throw new Error("Méthode événements non utilisée");
+          }
+        } catch (eventsError) {
+          // Si les événements échouent également, utiliser la méthode alternative
+          try {
+            methodUsed = 'alternative';
+            console.log("Tentative avec la méthode alternative...");
+            
+            // Récupérer les emprunts actifs
+            const activeLoans = await loadActiveLoans();
+            console.log(`Emprunts actifs récupérés: ${activeLoans.length}`);
+            
+            // Récupérer l'historique d'emprunt
+            const borrowHistory = await loadBorrowHistory();
+            console.log(`Historique d'emprunts récupéré: ${borrowHistory.length}`);
+            
+            // Récupérer les transactions du localStorage
+            const localTransactions = loadFromLocalStorage();
+            console.log(`Transactions du localStorage récupérées: ${localTransactions.length}`);
+            
+            // Combiner toutes les sources de données
+            allTransactions = formatAlternativeTransactions(
+              activeLoans,
+              borrowHistory,
+              localTransactions
+            );
+            
+            console.log(`Transactions combinées avec méthode alternative: ${allTransactions.length}`);
+            
+            if (allTransactions.length === 0) {
+              throw new Error("Aucune transaction trouvée avec la méthode alternative");
+            }
+          } catch (alternativeError) {
+            // Si tout échoue, passer au mode débogage
+            methodUsed = 'debug';
+            console.log("Toutes les méthodes ont échoué, passage au mode débogage");
+            console.warn("Erreurs:", { directError, eventsError, alternativeError });
+            
+            // Générer des transactions fictives
+            allTransactions = generateMockTransactions();
+            setLoadingMethod('debug');
+            
+            // Enregistrer l'erreur pour informer l'utilisateur
+            setError("Impossible de charger les vraies transactions. Affichage de données d'exemple.");
           }
         }
       }
       
-      // Méthode alternative: récupérer les emprunts actuels et l'historique
-      if (loadingMethod === 'alternative') {
-        // Récupérer les livres actuellement empruntés par tous les utilisateurs
-        const activeLoans = await loadActiveLoans();
-        
-        // Récupérer l'historique d'emprunt pour tous les utilisateurs
-        const borrowHistory = await loadBorrowHistory();
-        
-        // Tenter de récupérer les données du localStorage
-        const localStorageTransactions = loadFromLocalStorage();
-        
-        // Combiner et formater les données
-        const combinedTransactions = formatAlternativeTransactions(
-          activeLoans, 
-          borrowHistory,
-          localStorageTransactions
-        );
-        
-        setTransactions(combinedTransactions);
-        setIsLoading(false);
-        setLastRefresh(new Date());
+      console.log(`Total des transactions chargées: ${allTransactions.length} (méthode: ${methodUsed})`);
+      
+      // Assurons-nous que nous avons toujours des transactions à afficher
+      if (allTransactions.length === 0) {
+        console.warn("Aucune transaction n'a été chargée, passage au mode débogage de secours");
+        allTransactions = generateMockTransactions();
+        setLoadingMethod('debug');
+        setError("Aucune transaction trouvée. Affichage de données d'exemple.");
       }
+      
+      // Mettre à jour l'état avec les transactions chargées
+      setTransactions(allTransactions);
+      setLastRefresh(new Date());
     } catch (error) {
-      console.error("Erreur lors du chargement des transactions:", error);
-      setError("Erreur lors du chargement des transactions: " + error.message);
+      console.error("Erreur critique lors du chargement des transactions:", error);
+      setError(`Erreur lors du chargement des transactions: ${error.message}`);
+      
+      // En cas d'erreur critique, générer quand même des données de démo
+      const mockData = generateMockTransactions();
+      setTransactions(mockData);
+      setLoadingMethod('debug');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -181,48 +292,136 @@ const TransactionsAdmin = () => {
 
   // Formater les transactions à partir des événements
   const formatEventTransactions = async (borrowEvents, returnEvents) => {
-    // Formater les emprunts
-    const formattedBorrows = await Promise.all(borrowEvents.map(async (event) => {
-      const { borrowId, bookId, user, timestamp } = event.returnValues;
-      
-      // Récupérer les infos du livre
-      const bookDetails = await getBookDetails(bookId);
-      
-      return {
-        id: borrowId,
-        type: 'emprunt',
-        bookId: bookId,
-        user: user,
-        timestamp: new Date(parseInt(timestamp) * 1000).toISOString(),
-        livre: bookDetails,
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      };
-    }));
-    
-    // Formater les retours
-    const formattedReturns = await Promise.all(returnEvents.map(async (event) => {
-      const { borrowId, bookId, user, timestamp } = event.returnValues;
-      
-      // Récupérer les infos du livre
-      const bookDetails = await getBookDetails(bookId);
-      
-      return {
-        id: borrowId,
-        type: 'retour',
-        bookId: bookId,
-        user: user,
-        timestamp: new Date(parseInt(timestamp) * 1000).toISOString(),
-        livre: bookDetails,
-        blockNumber: event.blockNumber,
-        transactionHash: event.transactionHash
-      };
-    }));
-    
-    // Combiner et trier par date (plus récent d'abord)
-    return [...formattedBorrows, ...formattedReturns].sort((a, b) => {
-      return new Date(b.timestamp) - new Date(a.timestamp);
+    console.log("Formatage d'événements:", { 
+      emprunts: borrowEvents.length, 
+      retours: returnEvents.length 
     });
+    
+    const transactions = [];
+    
+    // Traiter les événements d'emprunt
+    for (const event of borrowEvents) {
+      try {
+        const eventValues = event.returnValues;
+        if (!eventValues) {
+          console.warn("Événement d'emprunt sans returnValues:", event);
+          continue;
+        }
+        
+        // Vérifier et extraire l'ID du livre
+        const bookId = eventValues.bookId || eventValues._bookId;
+        
+        if (bookId === undefined || bookId === null) {
+          console.warn("Événement d'emprunt sans ID de livre valide:", eventValues);
+          continue;
+        }
+        
+        console.log(`Traitement de l'événement d'emprunt pour le livre ${bookId}`);
+        
+        // Récupérer les détails du livre
+        const bookDetails = await getBookDetails(bookId);
+        
+        // Récupérer l'emprunteur et l'identifiant d'emprunt
+        const borrower = eventValues.user || eventValues._user || event.returnValues[1];
+        const borrowId = eventValues.borrowId || eventValues._borrowId || `borrow-${event.transactionHash}-${bookId}`;
+        
+        // Déterminer le timestamp
+        let timestamp;
+        if (event.timestamp) {
+          timestamp = new Date(parseInt(event.timestamp) * 1000).toISOString();
+        } else if (event.blockNumber) {
+          // Récupérer le timestamp du bloc si disponible
+          try {
+            const block = await web3Service.web3.eth.getBlock(event.blockNumber);
+            timestamp = new Date(parseInt(block.timestamp) * 1000).toISOString();
+          } catch (blockError) {
+            console.warn(`Impossible de récupérer le timestamp du bloc ${event.blockNumber}:`, blockError);
+            timestamp = new Date().toISOString(); // Fallback: date actuelle
+          }
+        } else {
+          timestamp = new Date().toISOString(); // Fallback: date actuelle
+        }
+        
+        // Ajouter la transaction d'emprunt
+        transactions.push({
+          id: borrowId,
+          type: 'emprunt',
+          bookId: bookId,
+          user: borrower,
+          timestamp: timestamp,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          livre: bookDetails
+        });
+      } catch (error) {
+        console.warn(`Erreur lors du traitement d'un événement d'emprunt:`, error, event);
+      }
+    }
+    
+    // Traiter les événements de retour
+    for (const event of returnEvents) {
+      try {
+        const eventValues = event.returnValues;
+        if (!eventValues) {
+          console.warn("Événement de retour sans returnValues:", event);
+          continue;
+        }
+        
+        // Vérifier et extraire l'ID du livre
+        const bookId = eventValues.bookId || eventValues._bookId;
+        
+        if (bookId === undefined || bookId === null) {
+          console.warn("Événement de retour sans ID de livre valide:", eventValues);
+          continue;
+        }
+        
+        console.log(`Traitement de l'événement de retour pour le livre ${bookId}`);
+        
+        // Récupérer les détails du livre
+        const bookDetails = await getBookDetails(bookId);
+        
+        // Récupérer l'emprunteur et l'identifiant d'emprunt
+        const borrower = eventValues.user || eventValues._user || event.returnValues[1];
+        const borrowId = eventValues.borrowId || eventValues._borrowId || `return-${event.transactionHash}-${bookId}`;
+        
+        // Déterminer le timestamp
+        let timestamp;
+        if (event.timestamp) {
+          timestamp = new Date(parseInt(event.timestamp) * 1000).toISOString();
+        } else if (event.blockNumber) {
+          // Récupérer le timestamp du bloc si disponible
+          try {
+            const block = await web3Service.web3.eth.getBlock(event.blockNumber);
+            timestamp = new Date(parseInt(block.timestamp) * 1000).toISOString();
+          } catch (blockError) {
+            console.warn(`Impossible de récupérer le timestamp du bloc ${event.blockNumber}:`, blockError);
+            timestamp = new Date().toISOString(); // Fallback: date actuelle
+          }
+        } else {
+          timestamp = new Date().toISOString(); // Fallback: date actuelle
+        }
+        
+        // Ajouter la transaction de retour
+        transactions.push({
+          id: `${borrowId}-return`,
+          type: 'retour',
+          bookId: bookId,
+          user: borrower,
+          timestamp: timestamp,
+          blockNumber: event.blockNumber,
+          transactionHash: event.transactionHash,
+          livre: bookDetails
+        });
+      } catch (error) {
+        console.warn(`Erreur lors du traitement d'un événement de retour:`, error, event);
+      }
+    }
+    
+    // Trier les transactions par date
+    transactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    console.log(`Transactions formatées: ${transactions.length}`);
+    return transactions;
   };
 
   // Récupérer les livres actuellement empruntés pour la méthode alternative
@@ -337,15 +536,48 @@ const TransactionsAdmin = () => {
       
       // Pour chaque utilisateur, récupérer son historique d'emprunt
       const allHistory = [];
+      const processedBorrowIds = new Set(); // Pour éviter les doublons
       
       for (const user of registeredUsers) {
         try {
-          const userHistory = await web3Service.getUserBorrowHistory(user);
+          let userHistory = [];
+          
+          // Essayer d'abord avec getUserBorrowHistory
+          try {
+            userHistory = await web3Service.getUserBorrowHistory(user);
+          } catch (historyError) {
+            console.warn(`Impossible de récupérer l'historique de ${user} via getUserBorrowHistory:`, historyError);
+            
+            // Essayer une méthode alternative: getBorrowsHistory (nom alternatif possible)
+            try {
+              userHistory = await web3Service.callViewMethod('getBorrowsHistory', [user]).catch(() => []);
+            } catch (alternativeError) {
+              console.warn(`Méthode alternative également échouée pour ${user}:`, alternativeError);
+            }
+          }
           
           if (userHistory && userHistory.length > 0) {
             // Convertir chaque entrée d'historique en transaction
             for (const entry of userHistory) {
               try {
+                // Vérifier si l'entrée est valide
+                if (!entry || typeof entry !== 'object') {
+                  console.warn("Entrée d'historique invalide:", entry);
+                  continue;
+                }
+                
+                // Vérifier si cet emprunt a déjà été traité
+                if (!entry.borrowId || processedBorrowIds.has(entry.borrowId)) {
+                  continue;
+                }
+                processedBorrowIds.add(entry.borrowId);
+                
+                // Vérifier si bookId existe
+                if (entry.bookId === undefined || entry.bookId === null) {
+                  console.warn(`Emprunt ${entry.borrowId} sans ID de livre valide:`, entry);
+                  continue;
+                }
+                
                 const bookDetails = await getBookDetails(entry.bookId);
                 
                 // Ajouter l'emprunt
@@ -360,13 +592,17 @@ const TransactionsAdmin = () => {
                 
                 // Si le livre a été retourné, ajouter également le retour
                 if (entry.returned) {
+                  // Vérifier si la date de retour semble valide
+                  const returnTime = entry.returnTime && parseInt(entry.returnTime) > 0 
+                    ? parseInt(entry.returnTime) * 1000 
+                    : parseInt(entry.borrowTime) * 1000 + 86400000; // Fallback: emprunté + 1 jour
+                  
                   allHistory.push({
-                    id: entry.borrowId,
+                    id: `${entry.borrowId}-return`,
                     type: 'retour',
                     bookId: entry.bookId,
                     user: user,
-                    timestamp: entry.returnTime ? new Date(parseInt(entry.returnTime) * 1000).toISOString() : 
-                                              new Date(parseInt(entry.borrowTime) * 1000 + 86400000).toISOString(),
+                    timestamp: new Date(returnTime).toISOString(),
                     livre: bookDetails
                   });
                 }
@@ -380,6 +616,7 @@ const TransactionsAdmin = () => {
         }
       }
       
+      console.log(`Historique d'emprunts chargé: ${allHistory.length} transactions au total`);
       return allHistory;
     } catch (error) {
       console.error("Erreur lors du chargement de l'historique d'emprunt:", error);
@@ -410,6 +647,12 @@ const TransactionsAdmin = () => {
 
   // Obtenir les détails d'un livre (réutilisable)
   const getBookDetails = async (bookId) => {
+    // Vérifier si bookId est undefined ou invalide
+    if (bookId === undefined || bookId === null) {
+      console.warn("getBookDetails: bookId est undefined ou null");
+      return { title: "Livre inconnu", author: "Auteur inconnu" };
+    }
+    
     let bookDetails = { title: `Livre #${bookId}`, author: 'Inconnu' };
     
     try {
@@ -434,7 +677,9 @@ const TransactionsAdmin = () => {
       { id: 1, title: "L'Art de la Guerre", author: "Sun Tzu" },
       { id: 2, title: "1984", author: "George Orwell" },
       { id: 3, title: "Le Petit Prince", author: "Antoine de Saint-Exupéry" },
-      { id: 4, title: "Dune", author: "Frank Herbert" }
+      { id: 4, title: "Dune", author: "Frank Herbert" },
+      { id: 5, title: "Introduction à la blockchain", author: "Satoshi Nakamoto" },
+      { id: 6, title: "Web3 et applications décentralisées", author: "Vitalik Buterin" }
     ];
     
     const users = [
@@ -445,11 +690,11 @@ const TransactionsAdmin = () => {
     
     const mockTransactions = [];
     
-    // Générer 10 transactions fictives
-    for (let i = 1; i <= 10; i++) {
+    // Générer davantage de transactions fictives (20 au lieu de 10)
+    for (let i = 1; i <= 20; i++) {
       const book = books[Math.floor(Math.random() * books.length)];
       const user = users[Math.floor(Math.random() * users.length)];
-      const daysAgo = Math.floor(Math.random() * 15);
+      const daysAgo = Math.floor(Math.random() * 30); // Sur une période plus longue
       const type = i % 3 === 0 ? 'retour' : 'emprunt'; // 2/3 emprunts, 1/3 retours
       
       const mockTimestamp = new Date(now);
@@ -469,14 +714,121 @@ const TransactionsAdmin = () => {
       });
     }
     
+    // Ajout de transactions pour l'utilisateur actuel
+    if (web3Service.account) {
+      // Ajouter 5 transactions spécifiques à l'utilisateur actuel
+      for (let i = 1; i <= 5; i++) {
+        const book = books[i % books.length];
+        const daysAgo = i * 3; // Espacer les transactions
+        
+        const mockTimestamp = new Date(now);
+        mockTimestamp.setDate(mockTimestamp.getDate() - daysAgo);
+        
+        // Alternance emprunt/retour
+        const type = i % 2 === 0 ? 'retour' : 'emprunt';
+        
+        mockTransactions.push({
+          id: 100 + i,
+          type: type,
+          bookId: book.id,
+          user: web3Service.account,
+          timestamp: mockTimestamp.toISOString(),
+          livre: {
+            title: book.title,
+            author: book.author
+          },
+          isMock: true,
+          userSpecific: true // Marqueur pour identifier les transactions de l'utilisateur actuel
+        });
+      }
+    }
+    
     // Trier par date (plus récent d'abord)
     return mockTransactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   };
   
-  // Filtrer les transactions selon le type choisi
-  const filteredTransactions = activeFilter === 'all' 
-    ? transactions 
-    : transactions.filter(tx => tx.type === activeFilter);
+  // Fonction pour charger les rôles des utilisateurs
+  const loadUserRoles = async () => {
+    try {
+      const users = await web3Service.callViewMethod('getRegisteredUsers', []).catch(() => []);
+      const roleMap = {};
+      
+      // Utiliser Promise.all pour exécuter les requêtes en parallèle
+      const rolePromises = users.map(async (user) => {
+        try {
+          // Essayer d'obtenir le rôle (professeur ou étudiant)
+          const isTeacher = await web3Service.callViewMethod('isTeacher', [user]).catch(() => false);
+          roleMap[user] = isTeacher ? 'teacher' : 'student';
+        } catch (error) {
+          console.warn(`Impossible de déterminer le rôle de l'utilisateur ${user}:`, error);
+          roleMap[user] = 'unknown';
+        }
+      });
+      
+      await Promise.all(rolePromises);
+      setUserRoles(roleMap);
+    } catch (error) {
+      console.warn("Erreur lors du chargement des rôles des utilisateurs:", error);
+    }
+  };
+
+  // Appliquer les filtres de recherche et pagination
+  const applyFilters = () => {
+    let filtered = [...transactions];
+    
+    // Filtrer par type de transaction
+    if (activeFilter !== 'all') {
+      filtered = filtered.filter(tx => tx.type === activeFilter);
+    }
+    
+    // Filtrer par utilisateur
+    if (userFilter === 'current') {
+      filtered = filtered.filter(tx => tx.user === web3Service.account);
+    } else if (userFilter === 'students') {
+      filtered = filtered.filter(tx => userRoles[tx.user] === 'student');
+    } else if (userFilter === 'teachers') {
+      filtered = filtered.filter(tx => userRoles[tx.user] === 'teacher');
+    }
+    
+    // Filtrer par terme de recherche
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(tx => 
+        tx.livre.title.toLowerCase().includes(term) ||
+        tx.livre.author.toLowerCase().includes(term) ||
+        formatAddress(tx.user).toLowerCase().includes(term) ||
+        tx.id.toString().includes(term)
+      );
+    }
+    
+    return filtered;
+  };
+  
+  // Obtenir les transactions filtrées et paginées
+  const filteredTransactions = applyFilters();
+  const paginatedTransactions = filteredTransactions.slice(
+    (currentPage - 1) * pageSize, 
+    currentPage * pageSize
+  );
+  const totalPages = Math.ceil(filteredTransactions.length / pageSize);
+  
+  // Obtenir une étiquette pour le rôle de l'utilisateur
+  const getUserRoleLabel = (user) => {
+    const role = userRoles[user];
+    if (!role) return null;
+    
+    if (role === 'teacher') {
+      return <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Professeur</span>;
+    } else if (role === 'student') {
+      return <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Étudiant</span>;
+    }
+    return null;
+  };
+
+  // Mettre à jour les données lors du changement de page ou de filtres
+  useEffect(() => {
+    setCurrentPage(1); // Réinitialiser la page lors du changement de filtres
+  }, [activeFilter, userFilter, searchTerm]);
   
   // Formatage de l'adresse
   const formatAddress = (address) => {
@@ -543,276 +895,250 @@ const TransactionsAdmin = () => {
           <History className="h-5 w-5 mr-2" />
           Historique des transactions
         </h2>
-        <p className="text-purple-100 text-sm">Suivez tous les emprunts et retours de livres</p>
+        <p className="text-purple-100 text-sm flex items-center">
+          <span>Journal complet des emprunts et retours par tous les utilisateurs</span>
+          {isLoading ? (
+            <span className="ml-2 px-2 py-0.5 bg-white/20 text-white text-xs rounded-full flex items-center">
+              <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> Chargement...
+            </span>
+          ) : (
+            <span className="ml-2 px-2 py-0.5 bg-white/20 text-white text-xs rounded-full">
+              {transactions.length} transactions
+            </span>
+          )}
+        </p>
       </div>
       
-      {/* Filtres */}
-      <div className="bg-gray-50 px-6 py-3 border-b flex flex-wrap items-center justify-between">
-        <div className="flex space-x-2 mb-2 md:mb-0">
-          <button 
-            onClick={() => setActiveFilter('all')}
-            className={`px-3 py-1 rounded-full text-sm font-medium ${
-              activeFilter === 'all' 
-                ? 'bg-indigo-100 text-indigo-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Tous
-          </button>
-          <button 
-            onClick={() => setActiveFilter('emprunt')}
-            className={`px-3 py-1 rounded-full text-sm font-medium ${
-              activeFilter === 'emprunt' 
-                ? 'bg-blue-100 text-blue-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Emprunts
-          </button>
-          <button 
-            onClick={() => setActiveFilter('retour')}
-            className={`px-3 py-1 rounded-full text-sm font-medium ${
-              activeFilter === 'retour' 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Retours
-          </button>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <button 
-            onClick={loadTransactions}
-            className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded text-sm font-medium hover:bg-indigo-100 transition flex items-center"
-          >
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Actualiser
-          </button>
-          <button 
-            onClick={switchLoadingMethod}
-            className={`px-3 py-1 rounded text-sm font-medium flex items-center transition ${
-              loadingMethod === 'events' 
-                ? 'bg-purple-50 text-purple-600 hover:bg-purple-100' 
-                : loadingMethod === 'alternative'
-                  ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                  : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
-            }`}
-            title={
-              loadingMethod === 'events' 
-                ? "Mode Événements: utilise les événements du contrat" 
-                : loadingMethod === 'alternative'
-                  ? "Mode Alternatif: utilise les méthodes d'appel direct"
-                  : "Mode Débogage: affiche des données fictives"
-            }
-          >
-            {loadingMethod === 'debug' && <Bug className="h-4 w-4 mr-1" />}
-            Mode: {loadingMethod === 'events' ? 'Événements' : loadingMethod === 'alternative' ? 'Alternatif' : 'Débogage'}
-          </button>
-        </div>
-      </div>
-      
-      {/* Contenu */}
-      <div className="px-6 py-4">
-        {isLoading ? (
-          <div className="flex justify-center items-center h-60">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-          </div>
-        ) : error ? (
-          <div className="bg-red-50 text-red-700 p-4 rounded-md">
-            <div className="font-medium flex items-center">
-              <AlertTriangle className="h-4 w-4 mr-1" />
-              Erreur
-            </div>
-            <div className="text-sm mt-1">{error}</div>
-            <div className="mt-3 flex space-x-2">
-              <button 
-                onClick={switchLoadingMethod}
-                className="text-xs bg-white text-red-600 px-2 py-1 border border-red-300 rounded hover:bg-red-50"
-              >
-                Essayer la méthode {
-                  loadingMethod === 'events' 
-                    ? 'alternative' 
-                    : loadingMethod === 'alternative' 
-                      ? 'de débogage' 
-                      : 'des événements'
-                }
-              </button>
-              <button 
-                onClick={loadTransactions}
-                className="text-xs bg-white text-blue-600 px-2 py-1 border border-blue-300 rounded hover:bg-blue-50 flex items-center"
-              >
-                <RefreshCw className="h-3 w-3 mr-1" />
-                Réessayer
-              </button>
-            </div>
-          </div>
-        ) : filteredTransactions.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <div className="text-5xl mb-4">📚</div>
-            <p>Aucune transaction à afficher</p>
-            <p className="text-sm mt-2">
-              {loadingMethod === 'events' 
-                ? "Essayez la méthode alternative pour vérifier s'il y a des données disponibles" 
-                : loadingMethod === 'alternative'
-                  ? "Essayez le mode débogage pour afficher des exemples fictifs"
-                  : "Les données de débogage n'ont pas pu être générées"}
-            </p>
-            <div className="mt-4 flex justify-center space-x-2">
-              <button 
-                onClick={switchLoadingMethod}
-                className="px-3 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 text-sm flex items-center"
-              >
-                Essayer la méthode {
-                  loadingMethod === 'events' 
-                    ? 'alternative' 
-                    : loadingMethod === 'alternative' 
-                      ? 'de débogage' 
-                      : 'des événements'
-                }
-              </button>
-              <button 
-                onClick={loadTransactions}
-                className="px-3 py-1 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 text-sm flex items-center"
-              >
-                <RefreshCw className="h-4 w-4 mr-1" />
-                Actualiser
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex items-center">
-                      <Hash className="h-4 w-4 mr-1" />
-                      ID
-                    </div>
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex items-center">
-                      <Book className="h-4 w-4 mr-1" />
-                      Type
-                    </div>
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex items-center">
-                      <User className="h-4 w-4 mr-1" />
-                      Utilisateur
-                    </div>
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex items-center">
-                      <BookOpen className="h-4 w-4 mr-1" />
-                      Livre
-                    </div>
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 mr-1" />
-                      Date
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTransactions.map((transaction, index) => (
-                  <tr key={`${transaction.type}-${transaction.id || index}-${transaction.blockNumber || index}`}
-                      className={`hover:bg-gray-50 transition ${
-                        transaction.isRealTime ? 'animate-pulse bg-green-50' : 
-                        transaction.isMock ? 'bg-amber-50/30' : ''
-                      }`}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {transaction.id || `—`}
-                      {transaction.isRealTime && (
-                        <span className="ml-2 text-xs text-green-600 font-medium">(Nouveau)</span>
-                      )}
-                      {transaction.isMock && (
-                        <span className="ml-2 text-xs text-amber-600 font-medium">(Exemple)</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`flex items-center px-2 py-1 text-xs leading-5 font-semibold rounded-full ${
-                        transaction.type === 'emprunt' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-green-100 text-green-800'
-                      }`}>
-                        {transaction.type === 'emprunt' ? 
-                          <><BookOpen className="h-3 w-3 mr-1" /> Emprunt</> : 
-                          <><CornerLeftUp className="h-3 w-3 mr-1" /> Retour</>}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900" title={transaction.user}>
-                        {formatAddress(transaction.user)}
-                        {transaction.user === web3Service.account && (
-                          <span className="ml-2 text-xs text-blue-600 font-medium">(Vous)</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {transaction.livre.title}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {transaction.livre.author}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(transaction.timestamp)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      
-      {/* Footer avec stats */}
-      {!isLoading && !error && (
-        <div className="bg-gray-50 px-6 py-3 border-t">
-          <div className="flex flex-wrap justify-between items-center">
-            <div className="flex flex-wrap gap-3">
-              <div className="text-sm text-gray-500">
-                <span className="font-medium text-indigo-600">{transactions.length}</span> transactions au total
-              </div>
-              <div className="text-sm text-gray-500">
-                <span className="font-medium text-blue-600">
-                  {transactions.filter(tx => tx.type === 'emprunt').length}
-                </span> emprunts
-              </div>
-              <div className="text-sm text-gray-500">
-                <span className="font-medium text-green-600">
-                  {transactions.filter(tx => tx.type === 'retour').length}
-                </span> retours
+      {/* Statistiques rapides */}
+      {!isLoading && !error && transactions.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gradient-to-b from-gray-50 to-white">
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Total Transactions</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-gray-800">{transactions.length}</div>
+              <div className="p-2 bg-indigo-100 rounded-full text-indigo-600">
+                <History className="h-5 w-5" />
               </div>
             </div>
-            
-            <div className="flex items-center gap-3 mt-2 md:mt-0">
-              <div className="text-xs text-gray-500">
-                Dernière mise à jour: {formatLastRefresh()}
+          </div>
+          
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Emprunts</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-blue-600">{transactions.filter(tx => tx.type === 'emprunt').length}</div>
+              <div className="p-2 bg-blue-100 rounded-full text-blue-600">
+                <BookOpen className="h-5 w-5" />
               </div>
-              <div className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                Mode: 
-                <span className={`font-medium ml-1 ${
-                  loadingMethod === 'events' 
-                    ? 'text-purple-600'
-                    : loadingMethod === 'alternative'
-                      ? 'text-blue-600'
-                      : 'text-amber-600'
-                }`}>
-                  {loadingMethod === 'events' ? 'Événements' : loadingMethod === 'alternative' ? 'Alternatif' : 'Débogage'}
-                </span>
+            </div>
+          </div>
+          
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Retours</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-green-600">{transactions.filter(tx => tx.type === 'retour').length}</div>
+              <div className="p-2 bg-green-100 rounded-full text-green-600">
+                <CornerLeftUp className="h-5 w-5" />
               </div>
+            </div>
+          </div>
+          
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Utilisateurs</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-purple-600">
+                {new Set(transactions.map(tx => tx.user)).size}
+              </div>
+              <div className="p-2 bg-purple-100 rounded-full text-purple-600">
+                <User className="h-5 w-5" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-2 text-xs">
+              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                {Object.values(userRoles).filter(role => role === 'teacher').length} profs
+              </span>
+              <span className="px-1.5 py-0.5 bg-green-50 text-green-600 rounded">
+                {Object.values(userRoles).filter(role => role === 'student').length} étudiants
+              </span>
             </div>
           </div>
         </div>
       )}
+
+      {/* Filtres */}
+      <div className="bg-gray-50 px-6 py-4 border-b">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          {/* Barre de recherche */}
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="Rechercher un livre, utilisateur..."
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          
+          {/* Filtres par type de transaction */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Type de transaction</label>
+            <div className="flex space-x-2">
+              <button 
+                onClick={() => setActiveFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  activeFilter === 'all' 
+                    ? 'bg-indigo-100 text-indigo-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Tous
+              </button>
+              <button 
+                onClick={() => setActiveFilter('emprunt')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  activeFilter === 'emprunt' 
+                    ? 'bg-blue-100 text-blue-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Emprunts
+              </button>
+              <button 
+                onClick={() => setActiveFilter('retour')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  activeFilter === 'retour' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Retours
+              </button>
+            </div>
+          </div>
+          
+          {/* Filtres par utilisateur */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Catégorie d'utilisateur</label>
+            <div className="flex flex-wrap gap-2">
+              <button 
+                onClick={() => setUserFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'all' 
+                    ? 'bg-purple-100 text-purple-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Tous
+              </button>
+              <button 
+                onClick={() => setUserFilter('current')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'current' 
+                    ? 'bg-purple-100 text-purple-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Moi
+              </button>
+              <button 
+                onClick={() => setUserFilter('students')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'students' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Étudiants
+              </button>
+              <button 
+                onClick={() => setUserFilter('teachers')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'teachers' 
+                    ? 'bg-blue-100 text-blue-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Professeurs
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tableau des transactions */}
+      <div className="p-6">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                ID
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Type
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Livre
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Utilisateur
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Date
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedTransactions.map((tx) => (
+              <tr key={tx.id}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {tx.id}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {tx.type === 'emprunt' ? 'Emprunt' : 'Retour'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {tx.livre.title}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {formatAddress(tx.user)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {formatDate(tx.timestamp)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      <div className="bg-gray-50 px-6 py-4 border-t">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-700">
+            {currentPage} de {totalPages}
+          </div>
+          <div className="flex items-center">
+            <button
+              onClick={() => setCurrentPage(Math.max(currentPage - 1, 1))}
+              className="px-3 py-1 rounded-full text-sm font-medium text-gray-500 hover:bg-gray-200"
+            >
+              Précédent
+            </button>
+            <button
+              onClick={() => setCurrentPage(Math.min(currentPage + 1, totalPages))}
+              className="px-3 py-1 rounded-full text-sm font-medium text-gray-500 hover:bg-gray-200"
+            >
+              Suivant
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
 
-export default TransactionsAdmin; 
+export default TransactionsAdmin;

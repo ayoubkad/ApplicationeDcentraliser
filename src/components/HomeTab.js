@@ -1,13 +1,5 @@
 import React, { useState } from 'react';
 import { User, Book, CheckCircle, ArrowRight, UserPlus, Loader } from 'lucide-react';
-import BookCard from './common/BookCard';
-
-const recentBooks = [
-  { id: 1, title: "Principes d'Économie", author: "Gregory Mankiw", isAvailable: true, ipfsHash: "QmX...", category: "Économie", pageCount: 528, publishedDate: "2019-05-10", isbn: "978-2-7590-2369-1" },
-  { id: 2, title: "Introduction à l'Algorithmique", author: "Thomas Cormen", isAvailable: false, ipfsHash: "QmY...", category: "Informatique", pageCount: 752, publishedDate: "2015-03-22", isbn: "978-2-1007-2998-7" },
-  { id: 3, title: "Physique Quantique", author: "Claude Cohen-Tannoudji", isAvailable: true, ipfsHash: "QmZ...", category: "Sciences", pageCount: 624, publishedDate: "2018-09-15", isbn: "978-2-1007-1288-0" },
-  { id: 4, title: "Histoire de l'Art", author: "Ernst Gombrich", isAvailable: true, ipfsHash: "QmA...", category: "Art", pageCount: 412, publishedDate: "2020-01-30", isbn: "978-2-0814-1212-2" }
-];
 
 const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, account, connectToMetaMask: propConnectToMetaMask, disconnectWallet }) => {
   const [currentAccount, setCurrentAccount] = useState(null);
@@ -114,22 +106,6 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             </div>
           </div>
         )}
-
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-          <Book size={26} className="mr-2 text-[#2A3B8C]" />
-          Livres récemment ajoutés
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          {recentBooks.map(book => (
-            <BookCard 
-              key={book.id} 
-              book={book} 
-              handleBorrowBook={handleBorrowBook}
-              isConnected={isConnected}
-              isRegistered={isRegistered}
-            />
-          ))}
-        </div>
 
         <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
           <CheckCircle size={26} className="mr-2 text-[#2A3B8C]" />

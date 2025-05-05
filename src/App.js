@@ -36,6 +36,12 @@ const App = () => {
     const checkConnection = async () => {
       setIsLoading(true);
       
+      // Timer de sécurité pour éviter le blocage indéfini de l'écran de chargement
+      const safetyTimer = setTimeout(() => {
+        setIsLoading(false);
+        console.warn("Le chargement a été arrêté par le timer de sécurité");
+      }, 15000);
+      
       try {
         if (window.ethereum) {
           // Vérifier si l'utilisateur est déjà connecté
@@ -109,6 +115,7 @@ const App = () => {
         console.error("Erreur lors de la vérification de connexion:", error);
         showNotification("Erreur de connexion au démarrage", "error");
       } finally {
+        clearTimeout(safetyTimer);
         setIsLoading(false);
       }
     };
@@ -415,131 +422,138 @@ const App = () => {
   // Fonction pour se connecter à MetaMask
   const connectToMetaMask = async () => {
     try {
-      console.log("Tentative de connexion à MetaMask...");
-      
-      // Vérification de la présence de MetaMask
-      if (!window.ethereum) {
-        console.error("Aucun provider Ethereum détecté");
-        showNotification("MetaMask n'est pas installé. Veuillez l'installer pour continuer.", "error");
-        return;
-      }
-      
       setIsLoading(true);
-      
-      // Définir explicitement l'adresse du contrat avant l'initialisation
-      const newContractAddress = '0xf9a82C631f7C03bb2DCA0435C982826621966e15';
-      console.log(`Mise à jour de l'adresse du contrat à: ${newContractAddress}`);
-      web3Service.contractAddress = newContractAddress;
-      web3Service.contractAddresses[1337] = newContractAddress;
-      web3Service.contractAddresses[5777] = newContractAddress;
-      
-      console.log("Appel à web3Service.initialize()");
-      const success = await web3Service.initialize();
-      console.log("Résultat de l'initialisation:", success);
-      
-      if (success) {
-        const account = web3Service.getAccount();
+
+      // Timer de sécurité pour éviter le blocage de l'interface
+      const safetyTimer = setTimeout(() => {
+        setIsLoading(false);
+        showNotification("La connexion à MetaMask a pris trop de temps. Veuillez réessayer.", "warning");
+      }, 20000);
+
+      // Vérifier si MetaMask est disponible
+      if (!window.ethereum) {
+        showNotification("MetaMask n'est pas installé. Veuillez l'installer pour continuer.", "error");
+        clearTimeout(safetyTimer);
+        setIsLoading(false);
+        return false;
+      }
+
+      try {
+        // Demander l'accès au compte
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        
+        if (accounts.length === 0) {
+          showNotification("Aucun compte MetaMask n'a été sélectionné", "error");
+          clearTimeout(safetyTimer);
+          setIsLoading(false);
+          return false;
+        }
+        
+        // Compte connecté
+        const account = accounts[0];
         console.log("Compte connecté:", account);
-        
-        setIsConnected(true);
         setAccount(account);
+        setIsConnected(true);
         
-        // Vérifier si l'utilisateur est inscrit
-        console.log("Vérification de l'inscription...");
+        // Initialize Web3Service
+        const success = await web3Service.initialize();
+        if (!success) {
+          showNotification("Connexion au contrat échouée. Veuillez vérifier que vous êtes sur le bon réseau.", "error");
+          clearTimeout(safetyTimer);
+          setIsLoading(false);
+          return false;
+        }
+        
+        // Mettre à jour les informations du contrat
+        setContractInfo({
+          address: web3Service.contractAddress,
+          abi: LibraryDAppABI,
+          hasValidConnection: success,
+          networkId: web3Service.networkId,
+          networkName: web3Service.getNetworkName(web3Service.networkId)
+        });
+        
+        // Vérifier si l'utilisateur est admin
+        const isAdminStatus = await web3Service.isAdmin();
+        setIsAdmin(isAdminStatus);
+        
+        // Les administrateurs sont automatiquement considérés comme inscrits
+        if (isAdminStatus) {
+          setIsRegistered(true);
+          showNotification("Connexion réussie avec un compte administrateur", "success");
+          
+          // Si l'admin est sur la page d'inscription, le rediriger vers le tableau de bord
+          if (activeTab === 'login') {
+            setTimeout(() => {
+              setActiveTab('dashboard');
+            }, 1000);
+          }
+          
+          clearTimeout(safetyTimer);
+          setIsLoading(false);
+          return true;
+        }
+        
+        // Vérifier si l'utilisateur est inscrit (uniquement pour les non-admins)
         const registered = await web3Service.isUserRegistered();
-        console.log("Utilisateur inscrit:", registered);
         setIsRegistered(registered);
+        console.log("Utilisateur inscrit:", registered);
         
         if (registered) {
-          // Charger la réputation
-          console.log("Récupération de la réputation...");
+          // Si l'utilisateur est inscrit, récupérer sa réputation
           const reputation = await web3Service.getUserReputation();
-          console.log("Réputation utilisateur:", reputation);
           setUserReputation(Number(reputation));
-          showNotification("Connexion réussie à votre portefeuille", "success");
+          console.log("Réputation utilisateur:", reputation);
           
-          // Rediriger vers le dashboard directement si déjà inscrit
-          setActiveTab('dashboard');
-        } else {
-          showNotification("Veuillez vous inscrire pour utiliser toutes les fonctionnalités", "warning");
-          // Rediriger automatiquement vers la page d'inscription
-          setActiveTab('login');
-          console.log("Redirection vers l'écran d'inscription...");
-        }
-      } else {
-        // Tentative de connexion manuelle avec l'adresse spécifique
-        console.log("Échec de l'initialisation automatique, tentative de connexion manuelle au contrat");
-        
-        try {
-          if (web3Service.web3) {
-            // Tester l'existence du contrat à cette adresse
-            const code = await web3Service.web3.eth.getCode(newContractAddress);
-            if (code && code !== '0x' && code !== '0x0') {
-              console.log("Code de contrat trouvé à l'adresse spécifiée");
-              
-              // Initialiser manuellement le contrat
-              const LibraryContractABI = require('./LibraryDAppABI.json');
-              web3Service.contract = new web3Service.web3.eth.Contract(
-                LibraryContractABI,
-                newContractAddress
-              );
-              
-              web3Service.initialized = true;
-              
-              // Tester un appel au contrat
-              const adminAddress = await web3Service.contract.methods.admin().call();
-              console.log("Contrat initialisé manuellement avec succès. Admin:", adminAddress);
-              
-              // Mettre à jour l'état de l'application
-              const account = web3Service.getAccount();
-              setIsConnected(true);
-              setAccount(account);
-              
-              // Vérifier l'inscription
-              const registered = await web3Service.isUserRegistered();
-              setIsRegistered(registered);
-              
-              if (registered) {
-                const reputation = await web3Service.getUserReputation();
-                setUserReputation(Number(reputation));
-                showNotification("Connexion réussie (mode manuel)", "success");
-                
-                // Rediriger vers le dashboard directement si déjà inscrit
-                setActiveTab('dashboard');
-              } else {
-                showNotification("Veuillez vous inscrire pour utiliser l'application", "warning");
-                setActiveTab('login');
-              }
-              
-              return;
-            } else {
-              console.error("Aucun code de contrat à cette adresse");
-            }
+          showNotification("Connexion réussie à MetaMask", "success");
+          
+          // Vérifier si l'utilisateur est admin
+          const isAdminStatus = await web3Service.isAdmin();
+          setIsAdmin(isAdminStatus);
+          
+          // Si l'utilisateur est sur la page d'inscription mais est déjà inscrit, 
+          // le rediriger vers le dashboard
+          if (activeTab === 'login') {
+            setTimeout(() => {
+              setActiveTab('dashboard');
+              showNotification("Vous êtes déjà inscrit. Redirection vers le tableau de bord...", "info");
+            }, 1000);
           }
-        } catch (manualError) {
-          console.error("Échec de l'initialisation manuelle:", manualError);
+          
+        } else {
+          // Si l'utilisateur n'est pas inscrit et qu'il est sur une page qui nécessite une inscription,
+          // le rediriger vers la page d'inscription
+          if (activeTab !== 'login' && activeTab !== 'home' && activeTab !== 'catalog') {
+            setTimeout(() => {
+              setActiveTab('login');
+              showNotification("Veuillez vous inscrire pour accéder à cette fonctionnalité", "info");
+            }, 1000);
+          } else {
+            showNotification("Connexion réussie. Vous n'êtes pas encore inscrit.", "info");
+          }
         }
         
-        // Vérifier si l'adresse du contrat est un placeholder
-        if (web3Service.contractAddress.includes('...')) {
-          showNotification("L'adresse du contrat n'est pas configurée correctement. Contactez l'administrateur.", "error");
+        clearTimeout(safetyTimer);
+        setIsLoading(false);
+        return true;
+        
+      } catch (error) {
+        if (error.code === 4001) {
+          // L'utilisateur a refusé la demande
+          showNotification("Connexion à MetaMask refusée par l'utilisateur", "error");
         } else {
-          showNotification("Connexion au portefeuille échouée. Vérifiez que MetaMask est déverrouillé et rechargez la page.", "error");
+          console.error("Erreur lors de la connexion à MetaMask:", error);
+          showNotification(`Erreur lors de la connexion à MetaMask: ${error.message}`, "error");
         }
+        clearTimeout(safetyTimer);
+        setIsLoading(false);
+        return false;
       }
     } catch (error) {
-      console.error("Erreur lors de la connexion à MetaMask:", error);
-      
-      // Messages d'erreur plus spécifiques
-      if (error.code === 4001) {
-        showNotification("Vous avez refusé la connexion à MetaMask", "warning");
-      } else if (error.message && error.message.includes("contract")) {
-        showNotification("Problème avec le contrat intelligent: " + error.message, "error");
-      } else {
-        showNotification("Erreur lors de la connexion: " + (error.message || "Erreur inconnue"), "error");
-      }
-    } finally {
+      console.error("Erreur inattendue lors de la connexion:", error);
+      showNotification(`Erreur inattendue: ${error.message}`, "error");
       setIsLoading(false);
+      return false;
     }
   };
 
@@ -561,135 +575,201 @@ const App = () => {
     }
   };
 
-  // Emprunter un livre
+  // Modifier la fonction handleBorrowBook pour bloquer les administrateurs
   const handleBorrowBook = async (bookId) => {
     if (!isConnected) {
-      showNotification("Veuillez vous connecter avec MetaMask", "warning");
-      return false;
+      showNotification("Veuillez connecter votre portefeuille MetaMask pour emprunter un livre.", "warning");
+      return;
+    }
+    
+    if (isAdmin) {
+      showNotification("Les administrateurs ne peuvent pas emprunter de livres. Veuillez utiliser un compte étudiant ou professeur.", "error");
+      return;
     }
     
     if (!isRegistered) {
-      // Mettre à jour l'URL pour indiquer que l'utilisateur vient d'une tentative d'emprunt
-      const currentUrl = new URL(window.location.href);
-      currentUrl.searchParams.set('source', 'borrow');
-      window.history.pushState({}, '', currentUrl);
-      
-      // Déclencher l'événement personnalisé pour indiquer la redirection depuis emprunt
-      window.dispatchEvent(new CustomEvent('borrowRedirect'));
-      
-      showNotification("Vous devez être inscrit pour emprunter des livres", "warning");
-      setActiveTab('login'); // Redirection automatique vers la page d'inscription
-      return false;
+      showNotification("Vous devez vous inscrire avant de pouvoir emprunter des livres.", "warning");
+      // Déclencher un événement pour ouvrir l'onglet d'inscription
+      window.dispatchEvent(new CustomEvent('openLoginTab'));
+      return;
     }
-
+    
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
-      // Récupérer les détails du livre avant l'emprunt
-      const bookDetails = await web3Service.getBook(bookId);
-      if (!bookDetails) {
-        showNotification("Impossible de récupérer les détails du livre", "error");
-        return false;
+      // Vérifier si l'utilisateur a déjà emprunté ce livre
+      const emprunts = await web3Service.getUserActiveLoans();
+      const dejaEmprunte = emprunts.some(emprunt => Number(emprunt.bookId) === Number(bookId));
+      
+      if (dejaEmprunte) {
+        showNotification("Vous avez déjà emprunté ce livre!", "error");
+        setIsLoading(false);
+        return;
       }
       
-      // Effectuer l'emprunt
-      const success = await web3Service.borrowBook(bookId);
+      // Récupérer les informations du livre
+      const bookDetails = await web3Service.getBook(bookId);
       
-      if (success) {
-        showNotification("Livre emprunté avec succès!", "success");
+      if (!bookDetails) {
+        showNotification("Le livre demandé n'existe pas.", "error");
+        setIsLoading(false);
+        return;
+      }
+      
+      if (!bookDetails.isAvailable) {
+        showNotification("Ce livre n'est pas disponible actuellement.", "error");
+        setIsLoading(false);
+        return;
+      }
+      
+      // Emprunter le livre
+      const result = await web3Service.borrowBook(bookId);
+      
+      if (result.success) {
+        showNotification(`"${bookDetails.title}" a été emprunté avec succès!`, "success");
         
-        // Informer l'utilisateur qu'il peut télécharger le livre depuis son espace personnel
-        if (bookDetails.pdfHash) {
-          showNotification("Vous pouvez télécharger ce livre depuis Mon Espace", "info");
-        }
-        
-        // Mettre à jour le tableau des emprunts
-        window.dispatchEvent(new CustomEvent('bookBorrowed', {
-          detail: {
-            bookId: bookId,
-            bookDetails: bookDetails
-          }
+        // Déclencher un événement pour informer l'application de l'emprunt
+        window.dispatchEvent(new CustomEvent('bookBorrowed', { 
+          detail: { 
+            bookId, 
+            bookDetails,
+            transaction: result.transaction,
+            borrowId: result.borrowId
+          } 
         }));
-        
-        // Rediriger vers Mon Espace après l'emprunt
-        setActiveTab('dashboard');
-        
-        return true;
       } else {
-        showNotification("Échec de l'emprunt du livre", "error");
-        return false;
+        showNotification(result.message || "Erreur lors de l'emprunt du livre", "error");
       }
     } catch (error) {
       console.error("Erreur lors de l'emprunt du livre:", error);
-      showNotification("Erreur lors de l'emprunt: " + error.message, "error");
-      return false;
+      showNotification(`Erreur: ${error.message}`, "error");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Retourner un livre
+  // Modifier la fonction handleReturnBook pour bloquer les administrateurs
   const handleReturnBook = async (bookId) => {
     if (!isConnected) {
-      showNotification("Veuillez vous connecter avec MetaMask", "warning");
-      return false;
+      showNotification("Veuillez connecter votre portefeuille MetaMask pour retourner un livre.", "warning");
+      return;
+    }
+    
+    if (isAdmin) {
+      showNotification("Les administrateurs ne peuvent pas retourner de livres. Veuillez utiliser un compte étudiant ou professeur.", "error");
+      return;
     }
     
     if (!isRegistered) {
-      showNotification("Veuillez vous inscrire avant de retourner un livre", "warning");
-      setActiveTab('login');
-      return false;
+      showNotification("Vous devez vous inscrire avant de pouvoir retourner des livres.", "warning");
+      return;
     }
-
+    
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
-      const success = await web3Service.returnBook(bookId);
-      if (success) {
-        showNotification("Livre retourné avec succès!", "success");
-        return true;
+      // Vérifier si l'utilisateur a bien emprunté ce livre
+      const emprunts = await web3Service.getUserActiveLoans();
+      const estEmprunte = emprunts.some(emprunt => Number(emprunt.bookId) === Number(bookId));
+      
+      if (!estEmprunte) {
+        showNotification("Vous n'avez pas emprunté ce livre!", "error");
+        setIsLoading(false);
+        return;
+      }
+      
+      // Retourner le livre
+      const result = await web3Service.returnBook(bookId);
+      
+      if (result.success) {
+        // Afficher le message de succès
+        showNotification(result.message || "Livre retourné avec succès!", "success");
+        
+        // Si la réputation a changé, la mettre à jour
+        if (result.reputation) {
+          setUserReputation(Number(result.reputation));
+        }
+        
+        // Déclencher un événement pour informer l'application du retour
+        window.dispatchEvent(new CustomEvent('bookReturned', { 
+          detail: { 
+            bookId,
+            transaction: result.transaction,
+            oldReputation: userReputation,
+            newReputation: result.reputation
+          } 
+        }));
       } else {
-        showNotification("Échec du retour du livre", "error");
-        return false;
+        showNotification(result.message || "Erreur lors du retour du livre", "error");
       }
     } catch (error) {
       console.error("Erreur lors du retour du livre:", error);
-      showNotification("Erreur lors du retour: " + error.message, "error");
-      return false;
+      showNotification(`Erreur: ${error.message}`, "error");
     } finally {
       setIsLoading(false);
     }
   };
   
-  // Déterminer si un onglet doit être désactivé
+  // Modifier la fonction isTabDisabled pour restreindre l'accès à certains onglets pour les administrateurs
   const isTabDisabled = (tab) => {
-    if (!isConnected && tab === 'dashboard') {
-      return true;
+    // Si l'onglet est l'accueil, toujours accessible
+    if (tab === 'home') return false;
+    
+    // Si l'utilisateur n'est pas connecté, désactiver tous les onglets sauf accueil et inscription
+    if (!isConnected && tab !== 'login') return true;
+    
+    // Si l'utilisateur est un administrateur
+    if (isAdmin) {
+      // Les administrateurs ne peuvent pas accéder à l'espace utilisateur et à l'inscription
+      if (tab === 'dashboard' || tab === 'login') return true;
+      // Les administrateurs peuvent accéder au catalogue (pour gestion), admin et transactions
+      return false;
     }
-    if (!isRegistered && (tab === 'dashboard')) {
-      return true;
-    }
+    
+    // Si l'utilisateur n'est pas inscrit, désactiver les onglets dashboard
+    if (!isRegistered && tab === 'dashboard') return true;
+    
+    // Les utilisateurs normaux ne peuvent pas accéder aux onglets admin et transactions
+    if (tab === 'admin' || tab === 'transactions') return true;
+    
     return false;
   };
 
-  // Changer d'onglet avec vérification des conditions
+  // Modifier la fonction handleTabChange pour rediriger les administrateurs 
   const handleTabChange = (tab) => {
+    // Vérifier si l'onglet est désactivé
     if (isTabDisabled(tab)) {
+      // Pour les administrateurs tentant d'accéder à des pages utilisateur
+      if (isAdmin && (tab === 'dashboard' || tab === 'login')) {
+        showNotification("Les administrateurs n'ont pas accès à cette fonctionnalité.", "warning");
+        return;
+      }
+      
+      // Pour d'autres cas, afficher un message général et rediriger vers la page de connexion
       if (!isConnected) {
-        if (tab === 'admin') {
-          // Ne pas afficher de message pour l'admin
-          return;
-        } else if (tab === 'dashboard') {
-          // Utiliser une notification bleue pour Mon espace
-          showNotification("Veuillez vous connecter pour accéder à Mon espace", "info");
-        } else {
-          showNotification("Veuillez vous connecter pour accéder à cette fonctionnalité", "warning");
-        }
-      } else if (!isRegistered) {
-        showNotification("Veuillez vous inscrire pour accéder à cette fonctionnalité", "warning");
+        showNotification("Veuillez connecter votre portefeuille MetaMask pour accéder à cette fonctionnalité.", "warning");
+        // Pour les onglets nécessitant une connexion, rediriger vers l'accueil
+        setActiveTab('home');
+        return;
+      }
+      
+      // Si l'utilisateur est connecté mais non inscrit, rediriger vers l'inscription
+      if (tab === 'dashboard' && !isRegistered) {
+        showNotification("Vous devez vous inscrire avant d'accéder à cette fonctionnalité.", "warning");
         setActiveTab('login');
         return;
       }
+      
+      // Pour les utilisateurs normaux tentant d'accéder aux pages admin
+      if ((tab === 'admin' || tab === 'transactions') && !isAdmin) {
+        showNotification("Accès réservé aux administrateurs.", "error");
+        return;
+      }
+      
       return;
     }
+    
+    // Si l'onglet est accessible, changer l'onglet actif
     setActiveTab(tab);
   };
 
@@ -742,6 +822,20 @@ const App = () => {
           const adminStatus = await web3Service.isAdmin();
           setIsAdmin(adminStatus);
           console.log("Statut admin vérifié:", adminStatus);
+          
+          // Si c'est un admin, considérer qu'il est enregistré automatiquement
+          if (adminStatus && !isRegistered) {
+            console.log("Administrateur détecté - inscription automatique");
+            setIsRegistered(true);
+            
+            // Si l'administrateur est sur la page d'inscription, le rediriger vers le tableau de bord
+            if (activeTab === 'login') {
+              setTimeout(() => {
+                setActiveTab('dashboard');
+                showNotification("Compte administrateur détecté. Accès automatique accordé.", "success");
+              }, 500);
+            }
+          }
         } catch (error) {
           console.error("Erreur lors de la vérification du statut admin:", error);
           setIsAdmin(false);
@@ -752,7 +846,7 @@ const App = () => {
     };
 
     checkAdminStatus();
-  }, [isConnected, account]);
+  }, [isConnected, account, activeTab, isRegistered]);
 
   return (
     <div className="app min-h-screen flex flex-col bg-gray-50">
@@ -767,6 +861,7 @@ const App = () => {
         disconnectWallet={disconnectWallet}
         showNotification={showNotification}
         contractInfo={contractInfo}
+        isAdmin={isAdmin}
       />
       
       <main className="flex-grow container mx-auto px-4 py-6">
