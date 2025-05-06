@@ -668,17 +668,11 @@ const App = () => {
     setIsLoading(true);
     
     try {
-      // Récupérer les détails du livre avant de vérifier l'emprunt
-      const book = await web3Service.getBook(bookId);
+      // Vérifier si l'utilisateur a bien emprunté ce livre
+      const emprunts = await web3Service.getUserActiveLoans();
+      const estEmprunte = emprunts.some(emprunt => Number(emprunt.bookId) === Number(bookId));
       
-      if (!book) {
-        showNotification("Le livre demandé n'existe pas.", "error");
-        setIsLoading(false);
-        return;
-      }
-      
-      // Vérifier si l'utilisateur est bien l'emprunteur actuel du livre
-      if (book.borrowedBy.toLowerCase() !== account.toLowerCase()) {
+      if (!estEmprunte) {
         showNotification("Vous n'avez pas emprunté ce livre!", "error");
         setIsLoading(false);
         return;

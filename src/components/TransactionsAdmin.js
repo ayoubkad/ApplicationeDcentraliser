@@ -670,6 +670,83 @@ const TransactionsAdmin = () => {
     return bookDetails;
   };
 
+  // Générer des transactions fictives pour le mode débogage
+  const generateMockTransactions = () => {
+    const now = new Date();
+    const books = [
+      { id: 1, title: "L'Art de la Guerre", author: "Sun Tzu" },
+      { id: 2, title: "1984", author: "George Orwell" },
+      { id: 3, title: "Le Petit Prince", author: "Antoine de Saint-Exupéry" },
+      { id: 4, title: "Dune", author: "Frank Herbert" },
+      { id: 5, title: "Introduction à la blockchain", author: "Satoshi Nakamoto" },
+      { id: 6, title: "Web3 et applications décentralisées", author: "Vitalik Buterin" }
+    ];
+    
+    const users = [
+      "0x123456789012345678901234567890123456abcd",
+      "0xabcdef1234567890123456789012345678901234",
+      web3Service.account || "0x0000000000000000000000000000000000000000"
+    ];
+    
+    const mockTransactions = [];
+    
+    // Générer davantage de transactions fictives (20 au lieu de 10)
+    for (let i = 1; i <= 20; i++) {
+      const book = books[Math.floor(Math.random() * books.length)];
+      const user = users[Math.floor(Math.random() * users.length)];
+      const daysAgo = Math.floor(Math.random() * 30); // Sur une période plus longue
+      const type = i % 3 === 0 ? 'retour' : 'emprunt'; // 2/3 emprunts, 1/3 retours
+      
+      const mockTimestamp = new Date(now);
+      mockTimestamp.setDate(mockTimestamp.getDate() - daysAgo);
+      
+      mockTransactions.push({
+        id: i,
+        type: type,
+        bookId: book.id,
+        user: user,
+        timestamp: mockTimestamp.toISOString(),
+        livre: {
+          title: book.title,
+          author: book.author
+        },
+        isMock: true // Indicateur que c'est une transaction fictive
+      });
+    }
+    
+    // Ajout de transactions pour l'utilisateur actuel
+    if (web3Service.account) {
+      // Ajouter 5 transactions spécifiques à l'utilisateur actuel
+      for (let i = 1; i <= 5; i++) {
+        const book = books[i % books.length];
+        const daysAgo = i * 3; // Espacer les transactions
+        
+        const mockTimestamp = new Date(now);
+        mockTimestamp.setDate(mockTimestamp.getDate() - daysAgo);
+        
+        // Alternance emprunt/retour
+        const type = i % 2 === 0 ? 'retour' : 'emprunt';
+        
+        mockTransactions.push({
+          id: 100 + i,
+          type: type,
+          bookId: book.id,
+          user: web3Service.account,
+          timestamp: mockTimestamp.toISOString(),
+          livre: {
+            title: book.title,
+            author: book.author
+          },
+          isMock: true,
+          userSpecific: true // Marqueur pour identifier les transactions de l'utilisateur actuel
+        });
+      }
+    }
+    
+    // Trier par date (plus récent d'abord)
+    return mockTransactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  };
+  
   // Fonction pour charger les rôles des utilisateurs
   const loadUserRoles = async () => {
     try {
@@ -695,58 +772,9 @@ const TransactionsAdmin = () => {
     }
   };
 
-  // Vérifier si un utilisateur est un utilisateur réel (pas un utilisateur fictif ou constant)
-  const isRealUser = (user) => {
-    // Si c'est l'utilisateur actuel, toujours le considérer comme réel
-    if (user === web3Service.account) {
-      return true;
-    }
-    
-    // Vérifications de base pour exclure les adresses nulles ou invalides
-    if (!user || user === '0x0000000000000000000000000000000000000000') {
-      return false;
-    }
-
-    // Si l'utilisateur a un rôle défini, le considérer comme réel
-    const role = userRoles[user];
-    if (role === 'student' || role === 'teacher') {
-      return true;
-    }
-
-    // Pour le développement, considérer tous les utilisateurs comme réels
-    // (enlever cette condition en production pour un filtrage plus strict)
-    return true;
-  };
-
-  // Vérifier si une transaction est réelle (et non fictive/constante)
-  const isRealTransaction = (tx) => {
-    // Si la transaction a un flag explicite indiquant qu'elle est fictive
-    if (tx.isMock === true) {
-      // En mode débogage, afficher quand même les transactions fictives
-      if (loadingMethod === 'debug') {
-        return true;
-      }
-      return false;
-    }
-    
-    // Validation minimale pour l'ID de livre
-    if (!tx.bookId) {
-      return false;
-    }
-    
-    // Pour les transactions en temps réel ou du contrat, toujours accepter
-    if (tx.isRealTime || tx.transactionHash) {
-      return true;
-    }
-    
-    // Vérification moins stricte de l'utilisateur
-    return true;
-  };
-
   // Appliquer les filtres de recherche et pagination
   const applyFilters = () => {
-    // Commencer par filtrer strictement toutes les transactions fictives
-    let filtered = transactions.filter(isRealTransaction);
+    let filtered = [...transactions];
     
     // Filtrer par type de transaction
     if (activeFilter !== 'all') {
@@ -766,8 +794,8 @@ const TransactionsAdmin = () => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(tx => 
-        (tx.livre?.title?.toLowerCase().includes(term)) ||
-        (tx.livre?.author?.toLowerCase().includes(term)) ||
+        tx.livre.title.toLowerCase().includes(term) ||
+        tx.livre.author.toLowerCase().includes(term) ||
         formatAddress(tx.user).toLowerCase().includes(term) ||
         tx.id.toString().includes(term)
       );
@@ -784,15 +812,15 @@ const TransactionsAdmin = () => {
   );
   const totalPages = Math.ceil(filteredTransactions.length / pageSize);
   
-  // Obtenir une étiquette pour le rôle de l'utilisateur avec style amélioré
+  // Obtenir une étiquette pour le rôle de l'utilisateur
   const getUserRoleLabel = (user) => {
     const role = userRoles[user];
     if (!role) return null;
     
     if (role === 'teacher') {
-      return <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">Professeur</span>;
+      return <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Professeur</span>;
     } else if (role === 'student') {
-      return <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-medium">Étudiant</span>;
+      return <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Étudiant</span>;
     }
     return null;
   };
@@ -1000,286 +1028,209 @@ const TransactionsAdmin = () => {
       </div>
       
       {/* Statistiques rapides */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gradient-to-b from-gray-50 to-white">
-        <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase tracking-wider">Total Transactions</div>
-          <div className="flex items-center justify-between mt-2">
-            <div className="text-2xl font-bold text-gray-800">{filteredTransactions.length}</div>
-            <div className="p-2 bg-indigo-100 rounded-full text-indigo-600">
-              <History className="h-5 w-5" />
+      {!isLoading && !error && transactions.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gradient-to-b from-gray-50 to-white">
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Total Transactions</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-gray-800">{transactions.length}</div>
+              <div className="p-2 bg-indigo-100 rounded-full text-indigo-600">
+                <History className="h-5 w-5" />
+              </div>
             </div>
           </div>
-          <div className="text-xs text-gray-500 mt-2">
-            {transactions.length - filteredTransactions.length} transactions fictives cachées
-          </div>
-        </div>
-        
-        <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase tracking-wider">Emprunts</div>
-          <div className="flex items-center justify-between mt-2">
-            <div className="text-2xl font-bold text-blue-600">{filteredTransactions.filter(tx => tx.type === 'emprunt').length}</div>
-            <div className="p-2 bg-blue-100 rounded-full text-blue-600">
-              <BookOpen className="h-5 w-5" />
+          
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Emprunts</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-blue-600">{transactions.filter(tx => tx.type === 'emprunt').length}</div>
+              <div className="p-2 bg-blue-100 rounded-full text-blue-600">
+                <BookOpen className="h-5 w-5" />
+              </div>
             </div>
           </div>
-          <div className="text-xs text-gray-500 mt-2">
-            {filteredTransactions.filter(tx => tx.type === 'emprunt' && tx.user === web3Service.account).length} par vous
-          </div>
-        </div>
-        
-        <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase tracking-wider">Retours</div>
-          <div className="flex items-center justify-between mt-2">
-            <div className="text-2xl font-bold text-green-600">{filteredTransactions.filter(tx => tx.type === 'retour').length}</div>
-            <div className="p-2 bg-green-100 rounded-full text-green-600">
-              <CornerLeftUp className="h-5 w-5" />
+          
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Retours</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-green-600">{transactions.filter(tx => tx.type === 'retour').length}</div>
+              <div className="p-2 bg-green-100 rounded-full text-green-600">
+                <CornerLeftUp className="h-5 w-5" />
+              </div>
             </div>
           </div>
-          <div className="text-xs text-gray-500 mt-2">
-            {filteredTransactions.filter(tx => tx.type === 'retour' && tx.user === web3Service.account).length} par vous
-          </div>
-        </div>
-        
-        <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-          <div className="text-xs text-gray-500 uppercase tracking-wider">Utilisateurs Uniques</div>
-          <div className="flex items-center justify-between mt-2">
-            <div className="text-2xl font-bold text-purple-600">
-              {new Set(filteredTransactions.map(tx => tx.user)).size}
+          
+          <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Utilisateurs</div>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-2xl font-bold text-purple-600">
+                {new Set(transactions.map(tx => tx.user)).size}
+              </div>
+              <div className="p-2 bg-purple-100 rounded-full text-purple-600">
+                <User className="h-5 w-5" />
+              </div>
             </div>
-            <div className="p-2 bg-purple-100 rounded-full text-purple-600">
-              <User className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="text-xs text-gray-500 mt-2 flex justify-between">
-            <span>{Object.values(userRoles).filter(role => role === 'student').length} étudiants</span>
-            <span>{Object.values(userRoles).filter(role => role === 'teacher').length} professeurs</span>
-          </div>
-        </div>
-      </div>
-      
-      {/* Filtres et recherche */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <button
-            onClick={() => setActiveFilter('all')}
-            className={`px-3 py-1 text-sm rounded-full ${activeFilter === 'all' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Toutes
-          </button>
-          <button
-            onClick={() => setActiveFilter('emprunt')}
-            className={`px-3 py-1 text-sm rounded-full ${activeFilter === 'emprunt' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Emprunts
-          </button>
-          <button
-            onClick={() => setActiveFilter('retour')}
-            className={`px-3 py-1 text-sm rounded-full ${activeFilter === 'retour' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Retours
-          </button>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <button
-            onClick={() => setUserFilter('all')}
-            className={`px-3 py-1 text-sm rounded-full ${userFilter === 'all' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Tous les utilisateurs
-          </button>
-          <button
-            onClick={() => setUserFilter('current')}
-            className={`px-3 py-1 text-sm rounded-full ${userFilter === 'current' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Vous uniquement
-          </button>
-          <button
-            onClick={() => setUserFilter('students')}
-            className={`px-3 py-1 text-sm rounded-full flex items-center ${userFilter === 'students' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Étudiants
-            <span className="ml-1 bg-white text-xs px-1.5 py-0.5 rounded-full">
-              {Object.values(userRoles).filter(role => role === 'student').length}
-            </span>
-          </button>
-          <button
-            onClick={() => setUserFilter('teachers')}
-            className={`px-3 py-1 text-sm rounded-full flex items-center ${userFilter === 'teachers' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}
-          >
-            Professeurs
-            <span className="ml-1 bg-white text-xs px-1.5 py-0.5 rounded-full">
-              {Object.values(userRoles).filter(role => role === 'teacher').length}
-            </span>
-          </button>
-        </div>
-        
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Rechercher par titre, auteur ou utilisateur..."
-            className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-            {searchTerm ? (
-              <X className="h-5 w-5 cursor-pointer" onClick={() => setSearchTerm('')} />
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {/* Message d'information sur les données */}
-      {error && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <Info className="h-5 w-5 text-yellow-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-yellow-700">{error}</p>
+            <div className="flex gap-2 mt-2 text-xs">
+              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                {Object.values(userRoles).filter(role => role === 'teacher').length} profs
+              </span>
+              <span className="px-1.5 py-0.5 bg-green-50 text-green-600 rounded">
+                {Object.values(userRoles).filter(role => role === 'student').length} étudiants
+              </span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Message explicatif sur l'affichage des transactions réelles uniquement */}
-      {!error && (
-        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 my-2 mx-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <Info className="h-5 w-5 text-blue-400" />
+      {/* Filtres */}
+      <div className="bg-gray-50 px-6 py-4 border-b">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          {/* Barre de recherche */}
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
             </div>
-            <div className="ml-3">
-              <p className="text-sm text-blue-700">
-                Cette page affiche uniquement les transactions effectuées par de vrais utilisateurs (étudiants et professeurs).
-                Les transactions fictives ou constantes ont été filtrées pour une meilleure lisibilité.
-              </p>
+            <input
+              type="text"
+              placeholder="Rechercher un livre, utilisateur..."
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          
+          {/* Filtres par type de transaction */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Type de transaction</label>
+            <div className="flex space-x-2">
+              <button 
+                onClick={() => setActiveFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  activeFilter === 'all' 
+                    ? 'bg-indigo-100 text-indigo-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Tous
+              </button>
+              <button 
+                onClick={() => setActiveFilter('emprunt')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  activeFilter === 'emprunt' 
+                    ? 'bg-blue-100 text-blue-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Emprunts
+              </button>
+              <button 
+                onClick={() => setActiveFilter('retour')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  activeFilter === 'retour' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Retours
+              </button>
+            </div>
+          </div>
+          
+          {/* Filtres par utilisateur */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Catégorie d'utilisateur</label>
+            <div className="flex flex-wrap gap-2">
+              <button 
+                onClick={() => setUserFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'all' 
+                    ? 'bg-purple-100 text-purple-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Tous
+              </button>
+              <button 
+                onClick={() => setUserFilter('current')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'current' 
+                    ? 'bg-purple-100 text-purple-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Moi
+              </button>
+              <button 
+                onClick={() => setUserFilter('students')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'students' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Étudiants
+              </button>
+              <button 
+                onClick={() => setUserFilter('teachers')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  userFilter === 'teachers' 
+                    ? 'bg-blue-100 text-blue-800' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Professeurs
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Tableau des transactions */}
       <div className="p-6">
-        {isLoading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-          </div>
-        ) : paginatedTransactions.length === 0 ? (
-          <div className="bg-gray-50 p-6 text-center rounded-lg">
-            <div className="mb-4 text-gray-400">
-              <Database className="h-12 w-12 mx-auto" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900">Aucune transaction trouvée</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              Aucune transaction ne correspond à vos critères de recherche.
-            </p>
-            <ForceDebugButton />
-          </div>
-        ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Type
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Livre
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Utilisateur
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                ID
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Type
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Livre
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Utilisateur
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Date
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedTransactions.map((tx) => (
+              <tr key={tx.id}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {tx.id}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {tx.type === 'emprunt' ? 'Emprunt' : 'Retour'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {tx.livre.title}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {formatAddress(tx.user)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {formatDate(tx.timestamp)}
+                </td>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedTransactions.map((tx) => {
-                const isCurrentUser = tx.user === web3Service.account;
-                const role = userRoles[tx.user];
-                
-                return (
-                  <tr 
-                    key={tx.id} 
-                    className={`hover:bg-gray-50 ${
-                      isCurrentUser 
-                        ? "bg-indigo-50 hover:bg-indigo-100" 
-                        : role === 'student' 
-                          ? "bg-green-50/30"
-                          : role === 'teacher'
-                            ? "bg-blue-50/30"
-                            : ""
-                    }`}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {tx.id}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {tx.type === 'emprunt' ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                          Emprunt
-                        </span>
-                      ) : (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                          Retour
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-8 w-8 flex items-center justify-center bg-indigo-100 rounded-full text-indigo-600">
-                          <Book className="h-4 w-4" />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{tx.livre.title}</div>
-                          <div className="text-sm text-gray-500">{tx.livre.author}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className={`flex-shrink-0 h-8 w-8 flex items-center justify-center rounded-full text-white
-                          ${isCurrentUser 
-                            ? "bg-indigo-600" 
-                            : role === 'student' 
-                              ? "bg-green-600"
-                              : role === 'teacher'
-                                ? "bg-blue-600"
-                                : "bg-gray-400"
-                          }`}>
-                          <User className="h-4 w-4" />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900 flex items-center">
-                            {isCurrentUser ? (
-                              <span className="font-bold">Vous</span>
-                            ) : (
-                              formatAddress(tx.user)
-                            )}
-                            {getUserRoleLabel(tx.user)}
-                          </div>
-                          {isCurrentUser && (
-                            <div className="text-xs text-gray-500">
-                              {formatAddress(tx.user)}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(tx.timestamp)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Pagination */}
@@ -1303,7 +1254,6 @@ const TransactionsAdmin = () => {
             </button>
           </div>
         </div>
-        {renderDataSourceMessage()}
       </div>
     </div>
   );

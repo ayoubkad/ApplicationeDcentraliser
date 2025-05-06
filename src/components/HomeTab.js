@@ -281,8 +281,8 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {recentBooks.map((book, index) => (
-                <div key={`history-${book.id}-${index}`} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
+              {recentBooks.map((book) => (
+                <div key={book.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
                   <div className="h-48 bg-gray-200 overflow-hidden">
                     <img 
                       src={book.imageUrl} 
