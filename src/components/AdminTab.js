@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw, ShieldAlert, Loader } from 'lucide-react';
+import { Plus, User, CheckCircle, Upload, X, FileText, Wifi, WifiOff, RefreshCw, ShieldAlert, Loader, Award, UserPlus, Filter, Search } from 'lucide-react';
 import ipfsService from '../services/IPFSService';
 import web3Service from '../services/Web3Service';
 
@@ -44,9 +44,14 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     books: false,
     hiddenBooks: false,
     addBook: false,
-    removeBook: false
+    removeBook: false,
+    users: false
   });
   const [timeoutIds, setTimeoutIds] = useState({});
+  const [users, setUsers] = useState([]);
+  const [userFilter, setUserFilter] = useState('all'); // 'all', 'students', 'professors'
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
 
   // Helper pour gérer les états de chargement avec timeout
   const startLoading = (type, timeoutMs = 10000) => {
@@ -113,6 +118,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   useEffect(() => {
     if (isAdmin) {
       loadBooks();
+      loadUsers(); // Chargement des utilisateurs
     }
   }, [isAdmin]);
 
@@ -1287,6 +1293,314 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     }
   };
 
+  // Fonction pour charger les utilisateurs
+  const loadUsers = async () => {
+    const stopLoading = startLoading('users', 15000);
+    setIsLoadingUsers(true);
+    
+    try {
+      let usersList = [];
+      
+      // Récupérer tous les utilisateurs
+      usersList = await web3Service.getAllRegisteredUsers();
+      
+      setUsers(usersList);
+    } catch (error) {
+      console.error("Erreur lors du chargement des utilisateurs:", error);
+      setNotification({
+        message: "Erreur lors du chargement des utilisateurs: " + error.message,
+        type: "error"
+      });
+    } finally {
+      stopLoading();
+      setIsLoadingUsers(false);
+    }
+  };
+
+  // Composant pour afficher la liste des utilisateurs
+  const UsersPanel = () => {
+    // Filtrer les utilisateurs selon le filtre actif et le terme de recherche
+    const filteredUsers = users.filter(user => {
+      // Appliquer le filtre par type d'utilisateur
+      if (userFilter === 'students' && user.role !== 0) return false;
+      if (userFilter === 'professors' && user.role !== 1) return false;
+      
+      // Appliquer le filtre de recherche
+      if (userSearchTerm) {
+        const searchLower = userSearchTerm.toLowerCase();
+        return (
+          (user.name && user.name.toLowerCase().includes(searchLower)) ||
+          (user.address && user.address.toLowerCase().includes(searchLower))
+        );
+      }
+      
+      return true;
+    });
+    
+    // Compter les étudiants et professeurs
+    const studentsCount = users.filter(user => user.role === 0).length;
+    const professorsCount = users.filter(user => user.role === 1).length;
+    
+    // Génère un fond de couleur différent selon le rôle
+    const getRoleBackgroundColor = (role) => {
+      return role === 1 ? 'bg-indigo-50' : 'bg-emerald-50';
+    };
+    
+    // Génère un texte de couleur différent selon le rôle
+    const getRoleTextColor = (role) => {
+      return role === 1 ? 'text-indigo-700' : 'text-emerald-700';
+    };
+    
+    // Formater une adresse Ethereum pour l'affichage
+    const formatAddress = (address) => {
+      if (!address) return 'Adresse inconnue';
+      if (address === web3Service.account) return `${address.substring(0, 6)}...${address.substring(address.length - 4)} (Vous)`;
+      return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+    };
+    
+    return (
+      <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
+        <div className="px-6 py-4 border-b border-gray-200 bg-[#6A1B9A]/5">
+          <h2 className="text-lg font-semibold text-[#6A1B9A]">Utilisateurs</h2>
+          <p className="text-sm text-gray-500">Liste des utilisateurs inscrits à la bibliothèque</p>
+        </div>
+        
+        <div className="p-6">
+          {/* En-tête avec statistiques */}
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Total utilisateurs</p>
+                  <p className="text-2xl font-bold text-[#6A1B9A]">{users.length}</p>
+                </div>
+                <div className="bg-[#6A1B9A]/10 rounded-full p-3">
+                  <User className="h-6 w-6 text-[#6A1B9A]" />
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Étudiants</p>
+                  <p className="text-2xl font-bold text-emerald-600">{studentsCount}</p>
+                </div>
+                <div className="bg-emerald-50 rounded-full p-3">
+                  <User className="h-6 w-6 text-emerald-600" />
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Professeurs</p>
+                  <p className="text-2xl font-bold text-indigo-600">{professorsCount}</p>
+                </div>
+                <div className="bg-indigo-50 rounded-full p-3">
+                  <Award className="h-6 w-6 text-indigo-600" />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Barre de recherche et filtres */}
+          <div className="mb-6 flex flex-col md:flex-row md:items-center gap-4 justify-between">
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Rechercher par nom ou adresse"
+                value={userSearchTerm}
+                onChange={(e) => setUserSearchTerm(e.target.value)}
+                className="pl-10 w-full border-gray-300 rounded-md focus:ring-[#6A1B9A] focus:border-[#6A1B9A] py-2 px-3 border"
+              />
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-500">Filtrer par :</span>
+              <div className="flex rounded-md shadow-sm">
+                <button
+                  className={`relative inline-flex items-center px-4 py-2 rounded-l-md border border-gray-300 text-sm font-medium ${
+                    userFilter === 'all' ? 'bg-[#6A1B9A] text-white z-10' : 'bg-white text-gray-700'
+                  }`}
+                  onClick={() => setUserFilter('all')}
+                >
+                  Tous
+                </button>
+                <button
+                  className={`relative -ml-px inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
+                    userFilter === 'students' ? 'bg-emerald-600 text-white z-10' : 'bg-white text-gray-700'
+                  }`}
+                  onClick={() => setUserFilter('students')}
+                >
+                  Étudiants
+                </button>
+                <button
+                  className={`relative -ml-px inline-flex items-center px-4 py-2 rounded-r-md border border-gray-300 text-sm font-medium ${
+                    userFilter === 'professors' ? 'bg-indigo-600 text-white z-10' : 'bg-white text-gray-700'
+                  }`}
+                  onClick={() => setUserFilter('professors')}
+                >
+                  Professeurs
+                </button>
+              </div>
+              
+              <button
+                onClick={loadUsers}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                title="Rafraîchir la liste"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          
+          {/* Liste des utilisateurs */}
+          {isLoadingUsers ? (
+            <div className="flex justify-center items-center h-32">
+              <div className="flex flex-col items-center">
+                <div className="w-8 h-8 border-4 border-[#6A1B9A] border-t-transparent rounded-full animate-spin mb-2"></div>
+                <p className="text-sm text-gray-500">Chargement des utilisateurs...</p>
+              </div>
+            </div>
+          ) : users.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                <User className="h-8 w-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-1">Aucun utilisateur trouvé</h3>
+              <p className="text-gray-500 mb-4">Aucun utilisateur n'est inscrit à la bibliothèque pour le moment.</p>
+              <button
+                onClick={loadUsers}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#6A1B9A] hover:bg-[#590D88]"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Rafraîchir
+              </button>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-100 mb-4">
+                <Search className="h-8 w-8 text-yellow-500" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-1">Aucun résultat</h3>
+              <p className="text-gray-500 mb-4">
+                Aucun utilisateur ne correspond à votre recherche
+                {userFilter !== 'all' ? ` dans la catégorie ${userFilter === 'students' ? 'étudiants' : 'professeurs'}` : ''}.
+              </p>
+              <button
+                onClick={() => {
+                  setUserSearchTerm('');
+                  setUserFilter('all');
+                }}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#6A1B9A] hover:bg-[#590D88]"
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                Réinitialiser les filtres
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Utilisateur
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Rôle
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Réputation
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Adresse
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Date d'inscription
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredUsers.map((user, index) => (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${getRoleBackgroundColor(user.role)}`}>
+                            {user.role === 1 ? (
+                              <Award className={`h-5 w-5 ${getRoleTextColor(user.role)}`} />
+                            ) : (
+                              <User className={`h-5 w-5 ${getRoleTextColor(user.role)}`} />
+                            )}
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">
+                              {user.name || 'Utilisateur sans nom'}
+                              {user.address === web3Service.account && (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                  Vous
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          user.role === 1 
+                            ? 'bg-indigo-100 text-indigo-800' 
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {user.role === 1 ? 'Professeur' : 'Étudiant'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden max-w-[100px]">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                user.reputation >= 90 ? 'bg-green-500' :
+                                user.reputation >= 70 ? 'bg-teal-500' :
+                                user.reputation >= 50 ? 'bg-yellow-500' :
+                                'bg-red-500'
+                              }`}
+                              style={{ width: `${user.reputation}%` }}
+                            ></div>
+                          </div>
+                          <div className="ml-2 text-xs text-gray-500">{user.reputation}/100</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className="font-mono">
+                          {formatAddress(user.address)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {user.registrationTime ? (
+                          new Date(user.registrationTime).toLocaleDateString('fr-FR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })
+                        ) : (
+                          'Inconnue'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Indicateur de chargement global */}
@@ -1389,6 +1703,9 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
           </button>
         </div>
       </div>
+
+      {/* Liste des utilisateurs */}
+      <UsersPanel />
 
       <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
         <div className="px-6 py-4 border-b border-gray-200 bg-[#6A1B9A]/5">

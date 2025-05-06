@@ -3233,6 +3233,151 @@ class Web3Service {
       return false;
     }
   }
+
+  // Récupère tous les utilisateurs enregistrés (étudiants et professeurs)
+  async getAllRegisteredUsers() {
+    console.log("Récupération de tous les utilisateurs enregistrés");
+    
+    // Structure pour stocker les utilisateurs
+    let allUsers = [];
+    
+    try {
+      // Étape 1: Récupérer les adresses depuis localStorage
+      let registeredAddresses = [];
+      const storedUsers = localStorage.getItem('registeredUsers');
+      if (storedUsers) {
+        try {
+          registeredAddresses = JSON.parse(storedUsers);
+          console.log(`${registeredAddresses.length} adresses trouvées dans localStorage`);
+        } catch (error) {
+          console.warn("Erreur lors du parsing des utilisateurs dans localStorage:", error);
+        }
+      }
+      
+      // Étape 2: Récupérer les données détaillées pour chaque utilisateur
+      for (const address of registeredAddresses) {
+        try {
+          const userDataString = localStorage.getItem(`user_${address.toLowerCase()}`);
+          if (userDataString) {
+            const userData = JSON.parse(userDataString);
+            
+            // Vérifier que les données contiennent les informations nécessaires
+            if (userData && userData.address && (userData.role !== undefined)) {
+              allUsers.push({
+                address: userData.address,
+                name: userData.name || 'Utilisateur sans nom',
+                role: userData.role, // 0 = étudiant, 1 = professeur
+                reputation: userData.reputation || 80,
+                registrationTime: userData.registrationTime || 0
+              });
+            }
+          }
+        } catch (error) {
+          console.warn(`Erreur lors de la récupération des données pour l'adresse ${address}:`, error);
+        }
+      }
+      
+      // Étape 3: Si le contrat est disponible, essayer de récupérer des données supplémentaires
+      if (this.contract && this.contract.methods && this.contract.methods.getAllUsers) {
+        try {
+          console.log("Tentative de récupération des utilisateurs via le contrat");
+          const contractUsers = await this.callViewMethod('getAllUsers', [], { gas: 8000000 });
+          
+          if (contractUsers && contractUsers.length > 0) {
+            console.log(`${contractUsers.length} utilisateurs trouvés via le contrat`);
+            
+            // Traiter les utilisateurs retournés par le contrat
+            for (const contractUser of contractUsers) {
+              const userAddress = contractUser.userAddress || contractUser[0];
+              const userName = contractUser.name || contractUser[1] || 'Sans nom';
+              const userRole = contractUser.role !== undefined ? contractUser.role : contractUser[2];
+              const userReputation = contractUser.reputation || contractUser[3] || 80;
+              
+              // Vérifier si cet utilisateur existe déjà dans notre liste
+              const existingUserIndex = allUsers.findIndex(u => 
+                u.address.toLowerCase() === userAddress.toLowerCase()
+              );
+              
+              if (existingUserIndex >= 0) {
+                // Mettre à jour les données existantes
+                allUsers[existingUserIndex] = {
+                  ...allUsers[existingUserIndex],
+                  name: userName || allUsers[existingUserIndex].name,
+                  role: userRole !== undefined ? userRole : allUsers[existingUserIndex].role,
+                  reputation: userReputation || allUsers[existingUserIndex].reputation
+                };
+              } else {
+                // Ajouter ce nouvel utilisateur
+                allUsers.push({
+                  address: userAddress,
+                  name: userName,
+                  role: userRole !== undefined ? userRole : 0,
+                  reputation: userReputation || 80
+                });
+              }
+            }
+          }
+        } catch (contractError) {
+          console.warn("Erreur lors de la récupération des utilisateurs via le contrat:", contractError);
+        }
+      } else if (this.contract && this.contract.methods) {
+        // Si getAllUsers n'existe pas, essayer de vérifier si isUserRegistered existe pour chaque adresse
+        console.log("La méthode getAllUsers n'existe pas, vérification individuelle des utilisateurs");
+        
+        // Cette partie est plus lente car elle vérifie chaque utilisateur individuellement
+        for (let i = 0; i < allUsers.length; i++) {
+          const user = allUsers[i];
+          try {
+            if (this.contract.methods.isUserRegistered) {
+              const isRegistered = await this.callViewMethod('isUserRegistered', [user.address]);
+              if (!isRegistered) {
+                console.log(`L'utilisateur ${user.address} n'est pas réellement inscrit selon le contrat`);
+                // Nous conservons quand même l'utilisateur dans la liste pour le moment
+              }
+            }
+            
+            // Si getUserReputation existe, mettre à jour la réputation
+            if (this.contract.methods.getUserReputation) {
+              const reputation = await this.callViewMethod('getUserReputation', [user.address]);
+              if (reputation) {
+                allUsers[i].reputation = parseInt(reputation);
+              }
+            }
+          } catch (error) {
+            console.warn(`Erreur lors de la vérification de l'utilisateur ${user.address}:`, error);
+          }
+        }
+      }
+      
+      // Tri par rôle (professeurs en premier, puis étudiants) et par nom
+      allUsers.sort((a, b) => {
+        // D'abord par rôle (professeurs avant étudiants)
+        if (a.role !== b.role) {
+          return b.role - a.role; // 1 (prof) avant 0 (étudiant)
+        }
+        // Puis par nom
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      
+      console.log(`Total de ${allUsers.length} utilisateurs récupérés`);
+      return allUsers;
+    } catch (error) {
+      console.error("Erreur lors de la récupération des utilisateurs:", error);
+      return [];
+    }
+  }
+
+  // Récupère uniquement les étudiants
+  async getStudents() {
+    const allUsers = await this.getAllRegisteredUsers();
+    return allUsers.filter(user => user.role === 0);
+  }
+
+  // Récupère uniquement les professeurs
+  async getProfessors() {
+    const allUsers = await this.getAllRegisteredUsers();
+    return allUsers.filter(user => user.role === 1);
+  }
 }
 
 const web3Service = new Web3Service();
