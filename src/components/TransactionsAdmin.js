@@ -128,7 +128,7 @@ const TransactionsAdmin = () => {
       // Mode débogage avec données fictives
       if (loadingMethod === 'debug') {
         console.log("Mode débogage activé, génération de transactions fictives");
-        const mockTransactions = generateMockTransactions();
+        const mockTransactions = generateMockTransactionsData();
         setTransactions(mockTransactions);
         setIsLoading(false);
         return;
@@ -242,7 +242,7 @@ const TransactionsAdmin = () => {
             console.warn("Erreurs:", { directError, eventsError, alternativeError });
             
             // Générer des transactions fictives
-            allTransactions = generateMockTransactions();
+            allTransactions = generateMockTransactionsData();
             setLoadingMethod('debug');
             
             // Enregistrer l'erreur pour informer l'utilisateur
@@ -256,7 +256,7 @@ const TransactionsAdmin = () => {
       // Assurons-nous que nous avons toujours des transactions à afficher
       if (allTransactions.length === 0) {
         console.warn("Aucune transaction n'a été chargée, passage au mode débogage de secours");
-        allTransactions = generateMockTransactions();
+        allTransactions = generateMockTransactionsData();
         setLoadingMethod('debug');
         setError("Aucune transaction trouvée. Affichage de données d'exemple.");
       }
@@ -269,7 +269,7 @@ const TransactionsAdmin = () => {
       setError(`Erreur lors du chargement des transactions: ${error.message}`);
       
       // En cas d'erreur critique, générer quand même des données de démo
-      const mockData = generateMockTransactions();
+      const mockData = generateMockTransactionsData();
       setTransactions(mockData);
       setLoadingMethod('debug');
     } finally {
@@ -671,80 +671,67 @@ const TransactionsAdmin = () => {
   };
 
   // Générer des transactions fictives pour le mode débogage
-  const generateMockTransactions = () => {
-    const now = new Date();
-    const books = [
-      { id: 1, title: "L'Art de la Guerre", author: "Sun Tzu" },
-      { id: 2, title: "1984", author: "George Orwell" },
-      { id: 3, title: "Le Petit Prince", author: "Antoine de Saint-Exupéry" },
-      { id: 4, title: "Dune", author: "Frank Herbert" },
-      { id: 5, title: "Introduction à la blockchain", author: "Satoshi Nakamoto" },
-      { id: 6, title: "Web3 et applications décentralisées", author: "Vitalik Buterin" }
+  const generateMockTransactionsData = () => {
+    // Création de données de test pour le débogage
+    const mockBooks = [
+      { id: 1, title: "Le Seigneur des Anneaux", author: "J.R.R. Tolkien" },
+      { id: 2, title: "Harry Potter", author: "J.K. Rowling" },
+      { id: 3, title: "1984", author: "George Orwell" },
+      { id: 4, title: "Le Petit Prince", author: "Antoine de Saint-Exupéry" },
+      { id: 5, title: "Dune", author: "Frank Herbert" }
     ];
     
-    const users = [
-      "0x123456789012345678901234567890123456abcd",
-      "0xabcdef1234567890123456789012345678901234",
-      web3Service.account || "0x0000000000000000000000000000000000000000"
+    const mockUsers = [
+      "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+      "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+      "0x5A0b54D5dc17e0AadC383d2db43B0a0D3E029c4c",
+      web3Service.account || "0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f"
     ];
     
-    const mockTransactions = [];
-    
-    // Générer davantage de transactions fictives (20 au lieu de 10)
-    for (let i = 1; i <= 20; i++) {
-      const book = books[Math.floor(Math.random() * books.length)];
-      const user = users[Math.floor(Math.random() * users.length)];
-      const daysAgo = Math.floor(Math.random() * 30); // Sur une période plus longue
-      const type = i % 3 === 0 ? 'retour' : 'emprunt'; // 2/3 emprunts, 1/3 retours
+    // Création des transactions aléatoires
+    const transactions = [];
+    for (let i = 0; i < 20; i++) {
+      const book = mockBooks[Math.floor(Math.random() * mockBooks.length)];
+      const user = mockUsers[Math.floor(Math.random() * mockUsers.length)];
+      const isReturn = Math.random() > 0.6; // 40% de retours
+      const timestamp = new Date();
+      timestamp.setDate(timestamp.getDate() - Math.floor(Math.random() * 30)); // Date aléatoire dans les 30 derniers jours
       
-      const mockTimestamp = new Date(now);
-      mockTimestamp.setDate(mockTimestamp.getDate() - daysAgo);
-      
-      mockTransactions.push({
-        id: i,
-        type: type,
+      transactions.push({
+        id: `mock-${i}`,
+        type: isReturn ? 'retour' : 'emprunt',
         bookId: book.id,
         user: user,
-        timestamp: mockTimestamp.toISOString(),
-        livre: {
-          title: book.title,
-          author: book.author
-        },
-        isMock: true // Indicateur que c'est une transaction fictive
+        timestamp: timestamp.toISOString(),
+        livre: book
       });
     }
     
-    // Ajout de transactions pour l'utilisateur actuel
-    if (web3Service.account) {
-      // Ajouter 5 transactions spécifiques à l'utilisateur actuel
-      for (let i = 1; i <= 5; i++) {
-        const book = books[i % books.length];
-        const daysAgo = i * 3; // Espacer les transactions
-        
-        const mockTimestamp = new Date(now);
-        mockTimestamp.setDate(mockTimestamp.getDate() - daysAgo);
-        
-        // Alternance emprunt/retour
-        const type = i % 2 === 0 ? 'retour' : 'emprunt';
-        
-        mockTransactions.push({
-          id: 100 + i,
-          type: type,
-          bookId: book.id,
-          user: web3Service.account,
-          timestamp: mockTimestamp.toISOString(),
-          livre: {
-            title: book.title,
-            author: book.author
-          },
-          isMock: true,
-          userSpecific: true // Marqueur pour identifier les transactions de l'utilisateur actuel
-        });
-      }
+    // Ajouter quelques transactions pour l'utilisateur actuel
+    const currentUser = web3Service.account;
+    if (currentUser) {
+      const userBook = mockBooks[0];
+      transactions.push({
+        id: `mock-user-1`,
+        type: 'emprunt',
+        bookId: userBook.id,
+        user: currentUser,
+        timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), // 12 heures avant
+        livre: userBook
+      });
+      
+      transactions.push({
+        id: `mock-user-2`,
+        type: 'retour',
+        bookId: userBook.id,
+        user: currentUser,
+        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 heures avant
+        livre: userBook
+      });
     }
     
-    // Trier par date (plus récent d'abord)
-    return mockTransactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    // Tri par date décroissante
+    return transactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   };
   
   // Fonction pour charger les rôles des utilisateurs
@@ -888,7 +875,7 @@ const TransactionsAdmin = () => {
       <button
         onClick={() => {
           setLoadingMethod('debug');
-          const mockTransactions = generateMockTransactions();
+          const mockTransactions = generateMockTransactionsData();
           setTransactions(mockTransactions);
           setError("Mode démonstration activé. Les données affichées sont des exemples.");
         }}
@@ -900,108 +887,32 @@ const TransactionsAdmin = () => {
     </div>
   );
 
-  // Fonction pour générer des transactions fictives pour le mode débogage
-  const generateMockTransactions = () => {
-    const now = new Date();
-    
-    // Pour la démo, utiliser des utilisateurs fictifs clairement identifiés
-    const demoUsers = [
-      { address: "0xab1234567890123456789012345678901234cdef", role: "student", name: "Étudiant Test" },
-      { address: "0xcd1234567890123456789012345678901234abef", role: "teacher", name: "Professeur Test" },
-      { address: web3Service.account, role: "student", name: "Vous (Test)" }
-    ];
-    
-    // Assigner des rôles pour l'affichage
-    demoUsers.forEach(user => {
-      userRoles[user.address] = user.role;
-    });
-    
-    const books = [
-      { id: 1, title: "L'Art de la Guerre", author: "Sun Tzu" },
-      { id: 2, title: "1984", author: "George Orwell" },
-      { id: 3, title: "Le Petit Prince", author: "Antoine de Saint-Exupéry" },
-      { id: 4, title: "Dune", author: "Frank Herbert" },
-      { id: 5, title: "Introduction à la blockchain", author: "Satoshi Nakamoto" },
-      { id: 6, title: "Web3 et applications décentralisées", author: "Vitalik Buterin" }
-    ];
-    
-    const mockTransactions = [];
-    const usedCombinations = new Set(); // Pour éviter les doublons d'emprunts
-    
-    // Générer des transactions fictives
-    for (let i = 1; i <= 20; i++) {
-      const book = books[Math.floor(Math.random() * books.length)];
-      const user = demoUsers[Math.floor(Math.random() * demoUsers.length)];
-      const combo = `${user.address}-${book.id}`; // Combinaison utilisateur-livre
-      
-      // Éviter les doublons d'emprunts pour le même utilisateur et livre
-      if (usedCombinations.has(combo)) continue;
-      usedCombinations.add(combo);
-      
-      const daysAgo = Math.floor(Math.random() * 30);
-      // Toujours commencer par un emprunt
-      const type = 'emprunt';
-      
-      const mockTimestamp = new Date(now);
-      mockTimestamp.setDate(mockTimestamp.getDate() - daysAgo);
-      
-      // Ajouter la transaction d'emprunt
-      const txId = `${user.address.substring(0, 6)}-${book.id}-${i}`;
-      mockTransactions.push({
-        id: txId,
-        type: type,
-        bookId: book.id,
-        user: user.address,
-        timestamp: mockTimestamp.toISOString(),
-        livre: {
-          title: book.title,
-          author: book.author
-        },
-        isMock: true
-      });
-      
-      // Pour certains emprunts, ajouter un retour
-      if (Math.random() > 0.4) {
-        const returnDaysAgo = Math.max(0, daysAgo - Math.floor(Math.random() * 10));
-        const returnTimestamp = new Date(now);
-        returnTimestamp.setDate(returnTimestamp.getDate() - returnDaysAgo);
-        
-        mockTransactions.push({
-          id: `${txId}-return`,
-          type: 'retour',
-          bookId: book.id,
-          user: user.address,
-          timestamp: returnTimestamp.toISOString(),
-          livre: {
-            title: book.title,
-            author: book.author
-          },
-          isMock: true
-        });
-      }
+  // Utilisation du hook useEffect pour afficher un debug à l'initialisation si nécessaire
+  useEffect(() => {
+    if (process.env.REACT_APP_DEBUG_TRANSACTIONS === 'true') {
+      console.log("Debug transactions activé via variable d'environnement");
+      setLoadingMethod('debug');
+      const mockTransactions = generateMockTransactionsData();
+      setTransactions(mockTransactions);
+      setError("Mode démonstration automatique via configuration");
     }
-    
-    console.log(`Généré ${mockTransactions.length} transactions fictives pour la démonstration`);
-    
-    // Trier par date (plus récent d'abord)
-    return mockTransactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  };
+  }, []);
 
-  // Affichage conditionnel selon les droits admin
-  if (!isAdmin && !isLoading) {
+  // Rendu principal du composant
+  if (!isAdmin) {
     return (
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="flex items-center justify-center h-40">
-          <div className="text-center">
-            <div className="text-red-500 mb-2">
-              <AlertTriangle className="h-12 w-12 mx-auto" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Accès restreint</h2>
-            <p className="text-gray-600">
-              Seuls les administrateurs peuvent consulter les transactions.
-            </p>
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded shadow-md">
+          <div className="flex items-center">
+            <AlertTriangle className="text-red-500 mr-3" />
+            <h2 className="text-lg font-semibold text-red-700">Accès non autorisé</h2>
           </div>
+          <p className="mt-2 text-red-600">
+            Vous n'avez pas les droits d'accès pour visualiser l'historique des transactions. 
+            Seuls les administrateurs peuvent accéder à cette section.
+          </p>
         </div>
+        <ForceDebugButton />
       </div>
     );
   }
