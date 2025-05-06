@@ -32,7 +32,7 @@ const BookContractABI = [
 // Adresse de votre contrat intelligent
 const CONTRACT_ADDRESS = '0x123456789...'; // À remplacer par votre adresse réelle
 
-const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, account, connectToMetaMask: propConnectToMetaMask, disconnectWallet }) => {
+const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, account, connectToMetaMask: propConnectToMetaMask, disconnectWallet, isAdmin }) => {
   const [currentAccount, setCurrentAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [recentBooks, setRecentBooks] = useState([]);
@@ -221,7 +221,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
       </div>
 
       <div className="container mx-auto px-4 py-4">
-        {isConnected && !isRegistered && (
+        {isConnected && !isRegistered && !isAdmin && (
           <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 mb-8 rounded-lg shadow-md">
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -281,8 +281,8 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {recentBooks.map((book) => (
-                <div key={book.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
+              {recentBooks.map((book, index) => (
+                <div key={`history-${book.id}-${index}`} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
                   <div className="h-48 bg-gray-200 overflow-hidden">
                     <img 
                       src={book.imageUrl} 
@@ -332,7 +332,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             </div>
             <h3 className="text-xl font-bold text-gray-800 mb-3">1. Inscrivez-vous</h3>
             <p className="text-gray-600">Connectez votre portefeuille et inscrivez-vous comme étudiant ou professeur.</p>
-            {isConnected && !isRegistered && (
+            {isConnected && !isRegistered && !isAdmin && (
               <button
                 className="mt-4 px-4 py-2 text-sm bg-yellow-100 text-yellow-800 rounded-md hover:bg-yellow-200 transition"
                 onClick={() => setActiveTab('login')}
@@ -357,7 +357,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
           </div>
         </div>
 
-        {(!isConnected || !isRegistered) && (
+        {(!isConnected || (!isRegistered && !isAdmin)) && (
           <div className="bg-gradient-to-r from-blue-800 to-indigo-800 text-white rounded-lg shadow-md p-8 mt-4 mb-8">
             <h2 className="text-2xl font-bold mb-3">Prêt à emprunter des livres ?</h2>
             <p className="mb-6 text-lg">L'inscription est rapide et vous donne un accès immédiat à notre bibliothèque entière.</p>
@@ -370,7 +370,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
                   <User size={20} className="mr-2" />
                   Se connecter d'abord
                 </button>
-              ) : !isRegistered ? (
+              ) : (!isRegistered && !isAdmin) ? (
                 <button
                   className="bg-yellow-500 text-white px-6 py-3 rounded-md font-semibold shadow-sm hover:bg-yellow-600 transition flex items-center"
                   onClick={() => setActiveTab('login')}

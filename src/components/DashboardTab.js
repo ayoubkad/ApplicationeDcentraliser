@@ -952,7 +952,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                                             item.author === "Information non récupérable";
                       
                       return (
-                        <tr key={item.id} className={`hover:bg-blue-50 transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                        <tr key={`history-${item.id}-${index}`} className={`hover:bg-blue-50 transition-colors duration-150 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                           <td className="px-6 py-4">
                             {isTitleReference ? (
                               <div className="flex items-center">

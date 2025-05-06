@@ -17,8 +17,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE'  // Ganache - Adresse déployée
+      1337: '0xea0EfDE6dD67227d874aFdFF9d45AC5104bfdc9C', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0xea0EfDE6dD67227d874aFdFF9d45AC5104bfdc9C'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -29,7 +29,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE';
+    this.contractAddress = '0xea0EfDE6dD67227d874aFdFF9d45AC5104bfdc9C';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -1258,9 +1258,18 @@ class Web3Service {
       const result = await method.send(defaultOptions);
       
       console.log(`Résultat de l'emprunt du livre ${bookId}:`, result);
-      return result;
+      
+      // Retourner un objet formaté avec success=true
+      return {
+        success: true,
+        transaction: result,
+        borrowId: result.events?.BookBorrowed?.returnValues?.borrowId || null,
+        message: "Livre emprunté avec succès!"
+      };
     } catch (error) {
       console.error(`Erreur lors de l'emprunt du livre ${bookId}:`, error);
+      
+      let errorMessage = "Une erreur s'est produite lors de l'emprunt du livre.";
       
       // Gérer les erreurs spécifiques de MetaMask
       if (error.code === -32603 && error.message.includes("Internal JSON-RPC error")) {
@@ -1268,30 +1277,34 @@ class Web3Service {
         try {
           const errorObj = JSON.parse(error.stack.match(/{.*}/s)[0]);
           if (errorObj && errorObj.message) {
-            throw new Error(`Erreur MetaMask: ${errorObj.message}`);
+            errorMessage = `Erreur MetaMask: ${errorObj.message}`;
           }
         } catch (parseError) {
           // Si nous ne pouvons pas parser l'erreur, suggérer une solution
-          throw new Error("Erreur de transaction MetaMask. Essayez de réinitialiser votre compte dans MetaMask (Paramètres > Avancé > Réinitialiser le compte).");
+          errorMessage = "Erreur de transaction MetaMask. Essayez de réinitialiser votre compte dans MetaMask (Paramètres > Avancé > Réinitialiser le compte).";
         }
       } 
       // Gérer l'erreur "user rejected transaction"
       else if (error.code === 4001 || (error.message && error.message.includes("User denied"))) {
-        throw new Error("Transaction annulée par l'utilisateur");
+        errorMessage = "Transaction annulée par l'utilisateur";
       }
       // Gérer l'erreur de limite de gaz insuffisante
       else if (error.message && error.message.toLowerCase().includes("gas")) {
-        throw new Error("Limite de gaz insuffisante. Veuillez augmenter la limite de gaz dans les options de transaction.");
+        errorMessage = "Limite de gaz insuffisante. Veuillez augmenter la limite de gaz dans les options de transaction.";
       }
       // Gérer les erreurs spécifiques du contrat
       else if (error.message && error.message.includes("revert LibraryDApp")) {
         const errorMsg = error.message.match(/revert (LibraryDApp:.*?)(?:'|$)/);
         if (errorMsg && errorMsg[1]) {
-          throw new Error(errorMsg[1]);
+          errorMessage = errorMsg[1];
         }
       }
       
-      throw error;
+      // Retourner un objet formaté avec success=false
+      return {
+        success: false,
+        message: errorMessage
+      };
     }
   }
 
