@@ -4,55 +4,50 @@ import ipfsService from '../services/IPFSService';
 import web3Service from '../services/Web3Service';
 
 const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
-  const [newBook, setNewBook] = useState({
-    title: '',
-    author: '',
-    category: '',
-    isbn: '',
-    pageCount: '',
-    publishedDate: '',
-    description: '',
-    price: '0',
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
+  const [books, setBooks] = useState([]);
+  const [isLoadingBooks, setIsLoadingBooks] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [bookStats, setBookStats] = useState({ total: 0, borrowed: 0, available: 0, overdue: 0 });
+  const [loanStats, setLoanStats] = useState({ total: 0, active: 5 });
+  const [userStats, setUserStats] = useState({ total: 12 });
+  const [loadingStates, setLoadingStates] = useState({
+    admin: false,
+    books: false,
+    users: false
+  });
+  const [timeoutIds, setTimeoutIds] = useState({});
+  const [activeSection, setActiveSection] = useState('books');
+  const [ipfsStatus, setIpfsStatus] = useState({ checking: false, connected: false, nodeInfo: '', error: null });
+  const [newBook, setNewBook] = useState({ 
+    title: '', 
+    author: '', 
+    category: '', 
+    isbn: '', 
+    pageCount: '', 
+    publishedDate: '', 
+    description: '', 
+    price: '0' 
   });
   const [bookCover, setBookCover] = useState(null);
   const [bookCoverPreview, setBookCoverPreview] = useState('');
   const [bookPDF, setBookPDF] = useState(null);
   const [ipfsHash, setIpfsHash] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [ipfsStatus, setIpfsStatus] = useState({ checking: true, connected: false });
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
-  const fileInputRef = useRef(null);
-  const pdfInputRef = useRef(null);
-  const [books, setBooks] = useState([]);
   const [selectedBookToRemove, setSelectedBookToRemove] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isLoadingBooks, setIsLoadingBooks] = useState(false);
-  const [diagnosticResult, setDiagnosticResult] = useState(null);
   const [showDiagnostic, setShowDiagnostic] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState(null);
   const [hiddenBooks, setHiddenBooks] = useState([]);
   const [showHiddenBooks, setShowHiddenBooks] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  const [tab, setTab] = useState('stats');
-  const [networkId, setNetworkId] = useState(null);
-  const [bookStats, setBookStats] = useState({ total: 0, borrowed: 0, available: 0, overdue: 0 });
-  const [ipfsError, setIpfsError] = useState(null);
-  const [loadingStates, setLoadingStates] = useState({
-    admin: false,
-    ipfs: false,
-    books: false,
-    hiddenBooks: false,
-    addBook: false,
-    removeBook: false,
-    users: false
-  });
-  const [timeoutIds, setTimeoutIds] = useState({});
-  const [users, setUsers] = useState([]);
-  const [userFilter, setUserFilter] = useState('all'); // 'all', 'students', 'professors'
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [userFilter, setUserFilter] = useState('all');
   const [userSearchTerm, setUserSearchTerm] = useState('');
-
+  
+  const fileInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
+  
   // Helper pour gérer les états de chargement avec timeout
   const startLoading = (type, timeoutMs = 10000) => {
     // Annuler tout timeout existant pour ce type
@@ -87,11 +82,8 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   const getLoadingLabel = (type) => {
     const labels = {
       admin: "la vérification administrateur",
-      ipfs: "la connexion IPFS",
       books: "la liste des livres",
-      hiddenBooks: "les livres masqués",
-      addBook: "l'ajout du livre",
-      removeBook: "la suppression du livre"
+      users: "la liste des utilisateurs"
     };
     return labels[type] || "l'opération";
   };
@@ -104,7 +96,6 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   }, [timeoutIds]);
 
   useEffect(() => {
-    checkIPFSConnection();
     checkAdminStatus();
     
     // Écouter les changements de compte MetaMask
@@ -136,7 +127,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       
       if (!adminStatus) {
         setNotification({ 
-          message: 'Attention: Vous n\'avez pas les droits d\'administrateur pour ajouter des livres', 
+          message: 'Attention: Vous n\'avez pas les droits d\'administrateur pour accéder à cette section', 
           type: 'warning' 
         });
       }
@@ -944,7 +935,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-md border border-gray-200">
+              <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -1662,44 +1653,6 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
           >
             <RefreshCw size={16} className="mr-1" />
             Résoudre problèmes MetaMask
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-[#6A1B9A]">Livres</h2>
-            <span className="text-sm font-semibold bg-[#6A1B9A]/10 text-[#6A1B9A] rounded-full px-3 py-1">{recentBooks.length} total</span>
-          </div>
-          <p className="text-gray-600 mb-4">Gérez le catalogue de la bibliothèque.</p>
-          <button className="w-full bg-[#6A1B9A] text-white px-4 py-2 rounded-md font-medium hover:bg-[#590D88] transition flex items-center justify-center">
-            <Plus size={18} className="mr-2" />
-            Ajouter un livre
-          </button>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-[#6A1B9A]">Utilisateurs</h2>
-            <span className="text-sm font-semibold bg-[#6A1B9A]/10 text-[#6A1B9A] rounded-full px-3 py-1">12 total</span>
-          </div>
-          <p className="text-gray-600 mb-4">Gérez les comptes utilisateurs.</p>
-          <button className="w-full bg-[#6A1B9A] text-white px-4 py-2 rounded-md font-medium hover:bg-[#590D88] transition flex items-center justify-center">
-            <User size={18} className="mr-2" />
-            Gérer les utilisateurs
-          </button>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-[#6A1B9A]">Emprunts</h2>
-            <span className="text-sm font-semibold bg-[#6A1B9A]/10 text-[#6A1B9A] rounded-full px-3 py-1">5 actifs</span>
-          </div>
-          <p className="text-gray-600 mb-4">Suivez les emprunts et les retours.</p>
-          <button className="w-full bg-[#6A1B9A] text-white px-4 py-2 rounded-md font-medium hover:bg-[#590D88] transition flex items-center justify-center">
-            <CheckCircle size={18} className="mr-2" />
-            Voir les transactions
           </button>
         </div>
       </div>
