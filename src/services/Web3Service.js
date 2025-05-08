@@ -1,6 +1,5 @@
 import Web3 from 'web3';
 import LibraryDAppABI from '../LibraryDAppABI.json';
-import ipfsService from './IPFSService';
 
 class Web3Service {
   constructor() {
@@ -17,8 +16,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE'  // Ganache - Adresse déployée
+      1337: '0x8c54D4b8b95e3C9B61df1dFF36b4068bC778907B', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x8c54D4b8b95e3C9B61df1dFF36b4068bC778907B'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -29,7 +28,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x813F219a7cc741a32cF588c91d3693bCD1d5DcaE';
+    this.contractAddress = '0x8c54D4b8b95e3C9B61df1dFF36b4068bC778907B';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -1185,8 +1184,8 @@ class Web3Service {
         // Tenter de récupérer les métadonnées IPFS si un hash est disponible
         if (book.ipfsHash) {
           try {
-            // Importer le service IPFS
-            const ipfsService = require('../services/IPFSService').default;
+            // Importer dynamiquement le service IPFS pour éviter les références circulaires
+            const ipfsService = await import('./IPFSService').then(module => module.default);
             console.log(`Tentative de récupération des métadonnées IPFS pour le hash: ${book.ipfsHash}`);
             
             // Récupérer les métadonnées du livre depuis IPFS
@@ -1230,6 +1229,15 @@ class Web3Service {
     if (!this.initialized) await this.initialize();
     
     try {
+      // Récupérer les informations du livre avant l'emprunt pour les enregistrer dans l'historique
+      const bookDetails = await this.getBook(bookId);
+      if (!bookDetails) {
+        return { 
+          success: false, 
+          message: "Livre introuvable. Impossible de procéder à l'emprunt."
+        };
+      }
+
       // Préparation de la transaction
       const method = this.contract.methods.borrowBook(bookId);
       
@@ -1254,16 +1262,73 @@ class Web3Service {
         // Continuer avec la valeur par défaut
       }
       
+      // Enregistrer la date d'emprunt
+      const borrowDate = new Date();
+      
       // Exécution de la transaction
       const result = await method.send(defaultOptions);
       
       console.log(`Résultat de l'emprunt du livre ${bookId}:`, result);
       
+      // Récupérer les événements pour obtenir le borrowId
+      const borrowId = result.events?.BookBorrowed?.returnValues?.borrowId || null;
+      
+      // Calculer la date de retour prévue (généralement 14 jours après l'emprunt)
+      const dueDate = new Date(borrowDate);
+      dueDate.setDate(dueDate.getDate() + 14); // Période d'emprunt de 2 semaines
+      
+      // Stocker les informations de l'emprunt dans le localStorage pour garder un historique local
+      try {
+        const lowerCaseAddress = this.account.toLowerCase();
+        
+        // Récupérer l'historique existant
+        let borrowHistory = [];
+        const historyJSON = localStorage.getItem(`borrowHistory_${lowerCaseAddress}`);
+        if (historyJSON) {
+          borrowHistory = JSON.parse(historyJSON);
+        }
+        
+        // Ajouter le nouvel emprunt
+        borrowHistory.push({
+          borrowId: borrowId,
+          bookId: bookId,
+          bookTitle: bookDetails.title,
+          bookAuthor: bookDetails.author,
+          ipfsHash: bookDetails.ipfsHash,
+          coverImageHash: bookDetails.coverImageHash,
+          borrowDate: borrowDate.toISOString(),
+          dueDate: dueDate.toISOString(),
+          returnDate: null,
+          status: 'emprunté',
+          transactionHash: result.transactionHash
+        });
+        
+        // Sauvegarder l'historique mis à jour
+        localStorage.setItem(`borrowHistory_${lowerCaseAddress}`, JSON.stringify(borrowHistory));
+        console.log("Historique d'emprunt mis à jour localement");
+      } catch (storageError) {
+        console.warn("Erreur lors de la sauvegarde de l'historique d'emprunt local:", storageError);
+      }
+      
+      // Déclencher un événement pour informer l'application de l'emprunt
+      window.dispatchEvent(new CustomEvent('bookBorrowed', {
+        detail: {
+          borrowId: borrowId,
+          bookId: bookId,
+          bookTitle: bookDetails.title,
+          borrowDate: borrowDate.toISOString(),
+          dueDate: dueDate.toISOString()
+        }
+      }));
+      
       // Retourner un objet formaté avec success=true
       return {
         success: true,
         transaction: result,
-        borrowId: result.events?.BookBorrowed?.returnValues?.borrowId || null,
+        borrowId: borrowId,
+        bookDetails: bookDetails,
+        borrowDate: borrowDate.toISOString(),
+        dueDate: dueDate.toISOString(),
         message: "Livre emprunté avec succès!"
       };
     } catch (error) {
@@ -1337,6 +1402,9 @@ class Web3Service {
       const oldReputation = await this.getUserReputation();
       console.log("Réputation avant le retour:", oldReputation);
 
+      // Enregistrer la date de retour
+      const returnDate = new Date();
+
       // Préparer la transaction
       const tx = await this.contract.methods.returnBook(bookId).send({
         from: this.account,
@@ -1362,8 +1430,40 @@ class Web3Service {
           localStorage.setItem(`user_${lowerCaseAddress}`, JSON.stringify(user));
           console.log("Réputation mise à jour dans localStorage:", newReputation);
         }
+        
+        // Mettre à jour l'historique des emprunts
+        const historyJSON = localStorage.getItem(`borrowHistory_${lowerCaseAddress}`);
+        if (historyJSON) {
+          let borrowHistory = JSON.parse(historyJSON);
+          
+          // Trouver l'emprunt correspondant à ce livre
+          const index = borrowHistory.findIndex(item => 
+            parseInt(item.bookId) === parseInt(bookId) && !item.returnDate
+          );
+          
+          if (index !== -1) {
+            // Mettre à jour l'emprunt avec les informations de retour
+            borrowHistory[index].returnDate = returnDate.toISOString();
+            borrowHistory[index].status = 'retourné';
+            borrowHistory[index].reputationChange = parseInt(newReputation) - parseInt(oldReputation);
+            borrowHistory[index].returnTransactionHash = tx.transactionHash;
+            
+            // Vérifier si le livre a été retourné en retard
+            const dueDate = new Date(borrowHistory[index].dueDate);
+            if (returnDate > dueDate) {
+              borrowHistory[index].isLate = true;
+              borrowHistory[index].daysLate = Math.floor((returnDate - dueDate) / (1000 * 60 * 60 * 24));
+            } else {
+              borrowHistory[index].isLate = false;
+            }
+            
+            // Sauvegarder l'historique mis à jour
+            localStorage.setItem(`borrowHistory_${lowerCaseAddress}`, JSON.stringify(borrowHistory));
+            console.log("Historique d'emprunt mis à jour avec les informations de retour");
+          }
+        }
       } catch (storageError) {
-        console.warn("Erreur lors de la sauvegarde de la réputation:", storageError);
+        console.warn("Erreur lors de la mise à jour des données locales:", storageError);
       }
 
       // Déclencher un événement personnalisé pour informer l'application
@@ -1373,7 +1473,8 @@ class Web3Service {
           bookDetails: book,
           transaction: tx,
           oldReputation: oldReputation,
-          newReputation: newReputation
+          newReputation: newReputation,
+          returnDate: returnDate.toISOString()
         }
       }));
 
@@ -1381,7 +1482,8 @@ class Web3Service {
         success: true,
         transaction: tx,
         reputation: newReputation,
-        reputationChange: parseInt(newReputation) - parseInt(oldReputation)
+        reputationChange: parseInt(newReputation) - parseInt(oldReputation),
+        returnDate: returnDate.toISOString()
       };
     } catch (error) {
       console.error("Erreur lors du retour du livre:", error);
@@ -1389,6 +1491,251 @@ class Web3Service {
         success: false,
         message: error.message || "Une erreur s'est produite lors du retour du livre."
       };
+    }
+  }
+
+  // Nouvelle méthode pour récupérer l'historique complet des emprunts avec détails
+  async getBorrowHistory() {
+    try {
+      const lowerCaseAddress = this.account ? this.account.toLowerCase() : null;
+      if (!lowerCaseAddress) {
+        console.warn("Aucun compte connecté pour récupérer l'historique d'emprunt");
+        return [];
+      }
+      
+      console.log(`Récupération de l'historique d'emprunt pour ${lowerCaseAddress}`);
+      
+      // Récupérer l'historique depuis le localStorage
+      let localHistory = [];
+      const historyJSON = localStorage.getItem(`borrowHistory_${lowerCaseAddress}`);
+      if (historyJSON) {
+        try {
+          localHistory = JSON.parse(historyJSON);
+          console.log(`${localHistory.length} emprunts trouvés dans l'historique local`);
+        } catch (parseError) {
+          console.warn("Erreur lors du parsing de l'historique local:", parseError);
+        }
+      }
+      
+      // Récupérer également les données depuis la blockchain pour s'assurer qu'elles sont à jour
+      let blockchainHistory = [];
+      try {
+        if (this.initialized && this.contract && this.contract.methods.getUserBorrowHistory) {
+          blockchainHistory = await this.callViewMethod('getUserBorrowHistory', [this.account], { gas: 8000000 });
+          console.log(`${blockchainHistory.length} emprunts récupérés depuis la blockchain`);
+          
+          // Pour chaque emprunt depuis la blockchain, enrichir les données locales ou ajouter si nouveau
+          for (const borrowItem of blockchainHistory) {
+            // Format possible des données depuis la blockchain (peut varier selon l'implémentation du contrat)
+            const borrowId = borrowItem.id || borrowItem[0];
+            const bookId = borrowItem.bookId || borrowItem[1];
+            const borrowTime = borrowItem.borrowTime || borrowItem[2];
+            const returnTime = borrowItem.returnTime || borrowItem[3];
+            const isReturned = borrowItem.returned || borrowItem[4] || (returnTime && returnTime !== '0');
+            
+            // Vérifier si cet emprunt existe déjà dans l'historique local
+            const existingIndex = localHistory.findIndex(item => 
+              (item.borrowId && item.borrowId === borrowId) || 
+              (parseInt(item.bookId) === parseInt(bookId) && !item.returnDate)
+            );
+            
+            if (existingIndex >= 0) {
+              // Mettre à jour l'entrée existante avec les données de la blockchain
+              if (isReturned && !localHistory[existingIndex].returnDate) {
+                // Si l'emprunt a été retourné dans la blockchain mais pas dans l'historique local
+                localHistory[existingIndex].status = 'retourné';
+                localHistory[existingIndex].returnDate = returnTime ? new Date(parseInt(returnTime) * 1000).toISOString() : new Date().toISOString();
+              }
+            } else {
+              // Cet emprunt n'existe pas dans l'historique local, récupérer les détails du livre
+              // et ajouter à l'historique
+              try {
+                const bookDetails = await this.getBook(bookId);
+                if (bookDetails) {
+                  const borrowDate = borrowTime ? new Date(parseInt(borrowTime) * 1000) : new Date();
+                  // Calculer la date d'échéance comme 14 jours après l'emprunt
+                  const dueDate = new Date(borrowDate);
+                  dueDate.setDate(dueDate.getDate() + 14);
+                  
+                  // Créer une nouvelle entrée d'historique
+                  const newHistoryEntry = {
+                    borrowId: borrowId,
+                    bookId: bookId,
+                    bookTitle: bookDetails.title,
+                    bookAuthor: bookDetails.author,
+                    ipfsHash: bookDetails.ipfsHash,
+                    coverImageHash: bookDetails.coverImageHash,
+                    borrowDate: borrowDate.toISOString(),
+                    dueDate: dueDate.toISOString(),
+                    status: isReturned ? 'retourné' : 'emprunté',
+                    returnDate: isReturned && returnTime ? new Date(parseInt(returnTime) * 1000).toISOString() : null,
+                    // Ajouter les informations de transaction blockchain
+                    borrowTransactionHash: borrowItem.borrowTransactionHash || null,
+                    returnTransactionHash: isReturned ? borrowItem.returnTransactionHash || null : null
+                  };
+                  
+                  // Si le livre a été retourné, calculer s'il était en retard
+                  if (isReturned && returnTime) {
+                    const returnDateObj = new Date(parseInt(returnTime) * 1000);
+                    if (returnDateObj > dueDate) {
+                      newHistoryEntry.isLate = true;
+                      newHistoryEntry.daysLate = Math.floor((returnDateObj - dueDate) / (1000 * 60 * 60 * 24));
+                    } else {
+                      newHistoryEntry.isLate = false;
+                    }
+                  }
+                  
+                  localHistory.push(newHistoryEntry);
+                }
+              } catch (bookError) {
+                console.warn(`Erreur lors de la récupération des détails du livre ${bookId}:`, bookError);
+              }
+            }
+          }
+          
+          // Sauvegarder l'historique mis à jour dans localStorage
+          localStorage.setItem(`borrowHistory_${lowerCaseAddress}`, JSON.stringify(localHistory));
+        }
+      } catch (blockchainError) {
+        console.warn("Erreur lors de la récupération de l'historique depuis la blockchain:", blockchainError);
+      }
+      
+      // Récupérer les emprunts actifs actuels
+      try {
+        // Vérifier les livres actuellement empruntés
+        const activeLoans = await this.getUserActiveLoans();
+        console.log("Emprunts actifs récupérés:", activeLoans);
+        
+        // Pour chaque emprunt actif, vérifier s'il existe dans l'historique
+        for (const loan of activeLoans) {
+          const bookId = loan.bookId;
+          // Vérifier si ce livre existe déjà dans l'historique
+          const existingIndex = localHistory.findIndex(item => 
+            parseInt(item.bookId) === parseInt(bookId) && !item.returnDate
+          );
+          
+          if (existingIndex === -1) {
+            // Ce livre n'est pas dans l'historique, l'ajouter
+            try {
+              const bookDetails = await this.getBook(bookId);
+              if (bookDetails) {
+                // Créer une nouvelle entrée
+                const borrowDate = loan.borrowTime ? new Date(loan.borrowTime) : new Date();
+                const dueDate = loan.dueTime ? new Date(loan.dueTime) : new Date(borrowDate);
+                dueDate.setDate(borrowDate.getDate() + 14); // Fallback si dueTime n'est pas défini
+                
+                const newEntry = {
+                  borrowId: loan.id,
+                  bookId: bookId,
+                  bookTitle: bookDetails.title || `Livre #${bookId}`,
+                  bookAuthor: bookDetails.author || "Auteur indisponible",
+                  ipfsHash: bookDetails.ipfsHash || "",
+                  coverImageHash: bookDetails.coverImageHash || bookDetails.ipfsHash || "",
+                  borrowDate: borrowDate.toISOString(),
+                  dueDate: dueDate.toISOString(),
+                  status: 'emprunté',
+                  returnDate: null
+                };
+                
+                localHistory.push(newEntry);
+                console.log(`Ajout d'un emprunt actif à l'historique: ${bookDetails.title}`);
+              }
+            } catch (bookError) {
+              console.warn(`Erreur lors de la récupération des détails pour l'emprunt actif ${bookId}:`, bookError);
+            }
+          }
+        }
+        
+        // Sauvegarder l'historique mis à jour
+        localStorage.setItem(`borrowHistory_${lowerCaseAddress}`, JSON.stringify(localHistory));
+      } catch (activeLoansError) {
+        console.warn("Erreur lors de la récupération des emprunts actifs:", activeLoansError);
+      }
+      
+      // Vérifier si des emprunts n'ont pas de détails complets et les enrichir
+      const enrichedHistory = await Promise.all(localHistory.map(async (item) => {
+        if (!item.bookTitle || item.bookTitle === `Livre #${item.bookId}` || !item.bookAuthor || item.bookAuthor === "Auteur indisponible") {
+          try {
+            const bookDetails = await this.getBook(item.bookId);
+            if (bookDetails) {
+              return {
+                ...item,
+                bookTitle: bookDetails.title || item.bookTitle || `Livre #${item.bookId}`,
+                bookAuthor: bookDetails.author || item.bookAuthor || "Auteur indisponible",
+                ipfsHash: bookDetails.ipfsHash || item.ipfsHash || "",
+                coverImageHash: bookDetails.coverImageHash || bookDetails.ipfsHash || item.coverImageHash || ""
+              };
+            }
+          } catch (error) {
+            console.warn(`Erreur lors de l'enrichissement des détails du livre ${item.bookId}:`, error);
+          }
+        }
+        return item;
+      }));
+      
+      // Trier l'historique par date d'emprunt (du plus récent au plus ancien)
+      enrichedHistory.sort((a, b) => new Date(b.borrowDate) - new Date(a.borrowDate));
+      
+      return enrichedHistory;
+    } catch (error) {
+      console.error("Erreur lors de la récupération de l'historique d'emprunt:", error);
+      return [];
+    }
+  }
+  
+  // Méthode spécifique pour récupérer l'emprunt en cours pour un livre
+  async getCurrentBorrowForBook(bookId) {
+    try {
+      if (!this.isInitialized()) {
+        await this.initialize();
+      }
+      
+      const bookIdNumber = parseInt(bookId);
+      if (isNaN(bookIdNumber)) {
+        throw new Error("ID de livre invalide");
+      }
+      
+      // Récupérer les détails du livre pour voir s'il est emprunté
+      const book = await this.getBook(bookIdNumber);
+      if (!book) {
+        throw new Error("Livre introuvable");
+      }
+      
+      // Si le livre n'est pas emprunté, retourner null
+      if (book.isAvailable || !book.currentBorrowId || book.currentBorrowId === '0') {
+        return null;
+      }
+      
+      // Récupérer les détails de l'emprunt en cours
+      const borrowDetails = await this.callViewMethod('getBorrowDetails', [book.currentBorrowId])
+        .catch(() => null);
+        
+      if (!borrowDetails) {
+        return null;
+      }
+      
+      // Formater les détails de l'emprunt
+      const borrowTime = borrowDetails.borrowTime ? new Date(parseInt(borrowDetails.borrowTime) * 1000) : new Date();
+      const dueTime = borrowDetails.dueTime ? new Date(parseInt(borrowDetails.dueTime) * 1000) : new Date(borrowTime);
+      dueTime.setDate(borrowTime.getDate() + 14); // Fallback si dueTime n'est pas défini
+      
+      // Créer un objet avec les détails de l'emprunt
+      return {
+        borrowId: book.currentBorrowId,
+        bookId: bookIdNumber,
+        bookTitle: book.title,
+        bookAuthor: book.author,
+        ipfsHash: book.ipfsHash,
+        coverImageHash: book.coverImageHash || book.ipfsHash,
+        borrowDate: borrowTime.toISOString(),
+        dueDate: dueTime.toISOString(),
+        borrowedBy: book.borrowedBy,
+        status: 'emprunté',
+        returnDate: null
+      };
+    } catch (error) {
+      console.error("Erreur lors de la récupération de l'emprunt en cours:", error);
+      return null;
     }
   }
 
@@ -2567,48 +2914,55 @@ class Web3Service {
       // Récupérer les métadonnées complètes depuis IPFS avec un timeout et gestion d'erreur
       console.log(`Récupération des métadonnées IPFS pour le livre ${bookId}: ${bookFromBlockchain.ipfsHash}`);
       
-      // Utiliser un Promise avec timeout pour éviter de bloquer indéfiniment
-      const ipfsMetadata = await Promise.race([
-        ipfsService.getBookMetadata(bookFromBlockchain.ipfsHash),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Délai d'attente dépassé pour IPFS")), 10000)
-        )
-      ]).catch(error => {
-        console.warn(`Timeout ou erreur lors de la récupération IPFS pour le livre ${bookId}:`, error.message);
-        return null;
-      });
-      
-      // Si les métadonnées sont disponibles, les fusionner avec les données blockchain
-      if (ipfsMetadata) {
-        // Fusionner les données de la blockchain avec les métadonnées IPFS
-        const completeBook = {
-          ...bookFromBlockchain,
-          // Ajouter les champs des métadonnées IPFS
-          category: ipfsMetadata.category || bookFromBlockchain.category,
-          description: ipfsMetadata.description || '',
-          isbn: ipfsMetadata.isbn || '',
-          pageCount: ipfsMetadata.pageCount || bookFromBlockchain.pageCount,
-          publishedDate: ipfsMetadata.publishedDate || '',
-          price: ipfsMetadata.price || '0',
-          // URLs d'images et de PDF
-          coverImageUrl: ipfsMetadata.coverImageUrl || null,
-          coverImageHash: ipfsMetadata.coverImageHash || null,
-          pdfUrl: ipfsMetadata.pdfUrl || null,
-          pdfHash: ipfsMetadata.pdfHash || null
-        };
+      try {
+        // Import dynamique pour éviter la dépendance circulaire
+        const ipfsService = await import('./IPFSService').then(module => module.default);
         
-        console.log(`Livre complet récupéré pour ID ${bookId}`);
-        return completeBook;
-      } else {
-        // Si les métadonnées ne sont pas disponibles, retourner les données de base avec flag
-        console.warn(`Métadonnées IPFS non disponibles pour le livre ${bookId}, utilisation des données blockchain uniquement`);
-        return {
-          ...bookFromBlockchain,
-          metadataError: true,
-          // Ajouter le hash de l'image pour permettre la récupération alternative
-          coverImageHash: bookFromBlockchain.ipfsHash // Utiliser le hash IPFS comme hash d'image de secours
-        };
+        // Utiliser un Promise avec timeout pour éviter de bloquer indéfiniment
+        const ipfsMetadata = await Promise.race([
+          ipfsService.getBookMetadata(bookFromBlockchain.ipfsHash),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Délai d'attente dépassé pour IPFS")), 10000)
+          )
+        ]).catch(error => {
+          console.warn(`Timeout ou erreur lors de la récupération IPFS pour le livre ${bookId}:`, error.message);
+          return null;
+        });
+        
+        // Si les métadonnées sont disponibles, les fusionner avec les données blockchain
+        if (ipfsMetadata) {
+          // Fusionner les données de la blockchain avec les métadonnées IPFS
+          const completeBook = {
+            ...bookFromBlockchain,
+            // Ajouter les champs des métadonnées IPFS
+            category: ipfsMetadata.category || bookFromBlockchain.category,
+            description: ipfsMetadata.description || '',
+            isbn: ipfsMetadata.isbn || '',
+            pageCount: ipfsMetadata.pageCount || bookFromBlockchain.pageCount,
+            publishedDate: ipfsMetadata.publishedDate || '',
+            price: ipfsMetadata.price || '0',
+            // URLs d'images et de PDF
+            coverImageUrl: ipfsMetadata.coverImageUrl || null,
+            coverImageHash: ipfsMetadata.coverImageHash || null,
+            pdfUrl: ipfsMetadata.pdfUrl || null,
+            pdfHash: ipfsMetadata.pdfHash || null
+          };
+          
+          console.log(`Livre complet récupéré pour ID ${bookId}`);
+          return completeBook;
+        }
+      } catch (ipfsError) {
+        console.warn(`Erreur lors de la récupération IPFS pour le livre ${bookId}:`, ipfsError);
       }
+      
+      // Si les métadonnées ne sont pas disponibles, retourner les données de base avec flag
+      console.warn(`Métadonnées IPFS non disponibles pour le livre ${bookId}, utilisation des données blockchain uniquement`);
+      return {
+        ...bookFromBlockchain,
+        metadataError: true,
+        // Ajouter le hash de l'image pour permettre la récupération alternative
+        coverImageHash: bookFromBlockchain.ipfsHash // Utiliser le hash IPFS comme hash d'image de secours
+      };
     } catch (error) {
       console.error(`Erreur lors de la récupération complète du livre ${bookId}:`, error);
       // Essayer de récupérer au moins les données blockchain de base

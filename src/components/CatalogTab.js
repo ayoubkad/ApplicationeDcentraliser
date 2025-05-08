@@ -125,6 +125,22 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
     loadBooks();
   }, [loadBooks]);
 
+  // Gestionnaire d'événement pour bookBorrowed
+  const handleBookBorrowed = useCallback((event) => {
+    console.log("Événement bookBorrowed reçu:", event.detail);
+    
+    // Rafraîchir la liste des livres pour mettre à jour les statuts
+    loadBooks();
+  }, [loadBooks]);
+
+  // Gestionnaire d'événement pour bookReturned
+  const handleBookReturned = useCallback((event) => {
+    console.log("Événement bookReturned reçu:", event.detail);
+    
+    // Rafraîchir la liste des livres pour mettre à jour les statuts
+    loadBooks();
+  }, [loadBooks]);
+
   // Charger les livres au montage du composant et quand isConnected change
   useEffect(() => {
     loadBooks();
@@ -132,12 +148,16 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
     // Écouter les événements d'ajout de livre et de rafraîchissement
     window.addEventListener('bookAdded', handleBookAdded);
     window.addEventListener('refreshBooks', handleRefreshBooks);
+    window.addEventListener('bookBorrowed', handleBookBorrowed);
+    window.addEventListener('bookReturned', handleBookReturned);
     
     return () => {
       window.removeEventListener('bookAdded', handleBookAdded);
       window.removeEventListener('refreshBooks', handleRefreshBooks);
+      window.removeEventListener('bookBorrowed', handleBookBorrowed);
+      window.removeEventListener('bookReturned', handleBookReturned);
     };
-  }, [isConnected, loadBooks, handleBookAdded, handleRefreshBooks, refreshTrigger]);
+  }, [isConnected, loadBooks, handleBookAdded, handleRefreshBooks, handleBookBorrowed, handleBookReturned, refreshTrigger]);
 
   // Ajouter un style pour l'animation de la notification
   useEffect(() => {
