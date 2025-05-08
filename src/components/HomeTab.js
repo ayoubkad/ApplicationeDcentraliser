@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Book, CheckCircle, ArrowRight, UserPlus, Loader, Clock } from 'lucide-react';
+import { User, Book, CheckCircle, ArrowRight, UserPlus, Loader, Clock, HelpCircle } from 'lucide-react';
 import web3Service from '../services/Web3Service';
 import ipfsService from '../services/IPFSService';
 
@@ -52,7 +52,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
       'Droit': 'indigo',
       // Ajoutez d'autres catégories selon vos besoins
     };
-    
+
     return categoryColors[category] || 'gray';
   };
 
@@ -60,25 +60,25 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
   const fetchRecentBooks = async () => {
     setLoadingBooks(true);
     setErrorMessage("");
-    
+
     try {
       // Initialiser le service Web3
       await web3Service.initialize();
-      
+
       // Récupérer tous les livres
       const allBooks = await web3Service.getBooks();
-      
+
       // Filtrer pour obtenir les 4 livres les plus récents (les derniers dans l'array)
       const recent = allBooks.slice(-4).reverse();
-      
+
       // Formater les données pour l'affichage avec traitement des images IPFS
       const formattedBooks = await Promise.all(recent.map(async book => {
         // Déterminer l'URL de l'image à partir du hash IPFS
         let imageUrl = "/assets/images/default-book.jpg";
-        
+
         // Utiliser coverImageHash en priorité, puis ipfsHash comme fallback
         const imageHash = book.coverImageHash || book.ipfsHash;
-        
+
         if (imageHash) {
           try {
             // Générer l'URL de l'image à partir du hash IPFS
@@ -90,7 +90,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             console.warn(`Erreur lors de la génération de l'URL IPFS pour l'image du livre ${book.id}:`, error);
           }
         }
-        
+
         return {
           id: book.id,
           title: book.title,
@@ -101,16 +101,16 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
           coverImageHash: imageHash // Conserver le hash pour toute utilisation ultérieure
         };
       }));
-      
+
       // Mettre à jour l'état avec les livres récupérés
       setRecentBooks(formattedBooks);
       setLoadingBooks(false);
-      
+
     } catch (error) {
       console.error("Erreur lors de la récupération des livres récents:", error);
       setErrorMessage("Impossible de charger les livres récents. " + error.message);
       setLoadingBooks(false);
-      
+
       // Si une erreur se produit, utiliser des données de démonstration temporaires
       setTimeout(() => {
         const mockBooks = [
@@ -123,7 +123,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             imageUrl: "/assets/images/book-1.jpg"
           },
           {
-            id: 2, 
+            id: 2,
             title: "Finance Quantitative",
             author: "Dr. Sophia Chen",
             category: "Économie",
@@ -182,8 +182,8 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
   return (
     <div className="flex flex-col min-h-screen">
       {/* Hero section avec l'image de bibliothèque comme arrière-plan */}
-      <div className="relative bg-cover bg-center h-[500px] mb-10 overflow-hidden" 
-           style={{ 
+      <div className="relative bg-cover bg-center h-[500px] mb-10 overflow-hidden"
+           style={{
              backgroundImage: "url('/assets/images/library-background.jpg')",
            }}>
         <div className="absolute inset-0 bg-[#2A3B8C]/70"></div>
@@ -193,7 +193,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
               Bibliothèque Universitaire Décentralisée
             </h1>
             <p className="text-xl md:text-2xl mb-8 text-white/90">
-              Une solution moderne pour emprunter et gérer des livres universitaires 
+              Une solution moderne pour emprunter et gérer des livres universitaires
               avec transparence et sécurité grâce à la blockchain.
             </p>
             <div className="flex flex-wrap gap-4">
@@ -265,7 +265,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
             <Clock size={26} className="mr-2 text-[#2A3B8C]" />
             Livres récemment ajoutés
           </h2>
-          
+
           {loadingBooks ? (
             <div className="flex justify-center items-center py-8">
               <Loader className="h-8 w-8 text-[#2A3B8C] animate-spin" />
@@ -284,9 +284,9 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
               {recentBooks.map((book) => (
                 <div key={book.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
                   <div className="h-48 bg-gray-200 overflow-hidden">
-                    <img 
-                      src={book.imageUrl} 
-                      alt={book.title} 
+                    <img
+                      src={book.imageUrl}
+                      alt={book.title}
                       className="w-full h-full object-cover transform hover:scale-105 transition"
                     />
                   </div>
@@ -297,7 +297,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
                       <span className={`bg-${book.categoryColor}-100 text-${book.categoryColor}-800 px-2 py-1 rounded text-xs`}>
                         {book.category}
                       </span>
-                      <button 
+                      <button
                         className="text-sm text-[#2A3B8C] hover:text-blue-700 font-medium"
                         onClick={() => setActiveTab('catalog')}
                       >
@@ -321,10 +321,21 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
           </div>
         </div>
 
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-          <CheckCircle size={26} className="mr-2 text-[#2A3B8C]" />
-          Comment ça marche
-        </h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+            <CheckCircle size={26} className="mr-2 text-[#2A3B8C]" />
+            Comment ça marche
+          </h2>
+          {!isAdmin && (
+            <button
+              onClick={() => setActiveTab('tutorial')}
+              className="flex items-center text-[#2A3B8C] hover:text-blue-700 transition"
+            >
+              <HelpCircle size={20} className="mr-1" />
+              <span>Voir le tutoriel complet</span>
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
           <div className="bg-white p-8 rounded-lg shadow-md hover:shadow-lg transition border border-gray-100">
             <div className="bg-[#2A3B8C]/10 text-[#2A3B8C] w-16 h-16 rounded-full flex items-center justify-center mb-6">
@@ -379,6 +390,15 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
                   Compléter mon inscription
                 </button>
               ) : null}
+              {!isAdmin && (
+                <button
+                  className="bg-blue-700 text-white px-6 py-3 rounded-md font-semibold shadow-sm hover:bg-blue-800 transition flex items-center"
+                  onClick={() => setActiveTab('tutorial')}
+                >
+                  <HelpCircle size={20} className="mr-2" />
+                  Consulter le tutoriel
+                </button>
+              )}
             </div>
           </div>
         )}

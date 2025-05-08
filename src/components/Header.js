@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut, History } from 'lucide-react';
+import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut, History, HelpCircle } from 'lucide-react';
 import web3Service from '../services/Web3Service';
 
 const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet, showNotification, userReputation, isAdmin }) => {
@@ -11,7 +11,7 @@ const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, c
     const handleClickOutside = () => {
       setShowAccountMenu(false);
     };
-    
+
     document.addEventListener('click', handleClickOutside);
     return () => {
       document.removeEventListener('click', handleClickOutside);
@@ -49,17 +49,17 @@ const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, c
     const status = await web3Service.getConnectionStatus();
     console.log("--- DIAGNOSTIC DE CONNEXION ---");
     console.log(JSON.stringify(status, null, 2));
-    
+
     // Afficher un alert avec les informations principales
     alert(`DIAGNOSTIC:
-    
+
 Réseau: ${status.network ? `${status.network.id} (${status.network.name})` : 'Non connecté'}
 Compte: ${status.account ? status.account.address : 'Non connecté'}
 Contrat: ${status.contract ? `${status.contract.address} (Code: ${status.contract.hasCode ? 'Oui' : 'Non'})` : 'Non initialisé'}
 Provider: ${status.provider ? `ChainID: ${status.provider.chainId}` : 'Non détecté'}
 Connecté: ${isConnected ? 'Oui' : 'Non'}
 Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
-    
+
     // Déboguer le problème du bouton S'inscrire
     console.log("Débogage du bouton S'inscrire:");
     console.log("- Compte:", account);
@@ -83,12 +83,12 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
           <div className="flex items-center">
             <div className="text-2xl font-bold text-[#2A3B8C] mr-2">
               <BookOpen size={30} className="inline mr-2 text-[#2A3B8C]" />
-              <a 
-                href="#" 
-                onClick={(e) => { 
-                  e.preventDefault(); 
-                  setActiveTab('home'); 
-                }} 
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveTab('home');
+                }}
                 className="hover:text-[#1F2D6B] transition"
               >
                 BiblioChain
@@ -140,7 +140,18 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                 </button>
               </>
             )}
-            
+
+            {/* Bouton Tutoriel - visible seulement pour les non-admins */}
+            {!isAdmin && (
+              <button
+                onClick={() => setActiveTab('tutorial')}
+                className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'tutorial' ? 'bg-blue-100 text-[#2A3B8C] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                <HelpCircle size={18} className="mr-1" />
+                <span>Tutoriel</span>
+              </button>
+            )}
+
             {/* Bouton S'inscrire visible seulement si pas admin */}
             {!isAdmin && (
               <button
@@ -160,31 +171,31 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                 {/* Statut de connexion */}
                 <div className="flex items-center">
                   <div className="relative">
-                    <div 
+                    <div
                       className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium cursor-pointer transition ${isRegistered ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}`}
                       onClick={toggleAccountMenu}
                     >
                       <div className={`w-2 h-2 rounded-full mr-2 ${isRegistered ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
                       {formatAddress(account)}
                     </div>
-                    
+
                     {/* Menu déroulant du compte */}
                     {showAccountMenu && (
-                      <div 
+                      <div
                         className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg py-1 z-10 border border-gray-200"
                         onClick={handleAccountMenuClick}
                       >
                         <div className="px-4 py-2 text-xs text-gray-500 border-b">Compte connecté</div>
                         <div className="px-4 py-2 text-xs font-mono overflow-hidden text-ellipsis break-all">{account}</div>
                         <div className="px-4 py-2 text-xs">
-                          Statut: {isRegistered ? 
-                            <span className="text-green-600 font-medium">Inscrit</span> : 
+                          Statut: {isRegistered ?
+                            <span className="text-green-600 font-medium">Inscrit</span> :
                             <span className="text-yellow-600 font-medium">Non inscrit</span>
                           }
                           {isAdmin && <span className="ml-2 bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded text-xs">Admin</span>}
                         </div>
                         <hr className="my-1" />
-                        
+
                         {/* Options de menu conditionnelles selon le rôle */}
                         {isAdmin ? (
                           <>
@@ -214,7 +225,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                               <LayoutDashboard size={16} className="inline mr-2 text-blue-600" />
                               Mon Espace
                             </button>
-                            
+
                             {/* Afficher "S'inscrire" seulement si pas inscrit */}
                             {!isRegistered && (
                               <button
@@ -227,7 +238,22 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                             )}
                           </>
                         )}
-                        
+
+                        <hr className="my-1" />
+                        {/* Lien vers le tutoriel - visible seulement pour les non-admins */}
+                        {!isAdmin && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTab('tutorial');
+                              setShowAccountMenu(false);
+                            }}
+                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          >
+                            <HelpCircle size={16} className="inline mr-2 text-blue-600" />
+                            Tutoriel Blockchain
+                          </button>
+                        )}
                         <hr className="my-1" />
                         <button
                           onClick={(e) => {
@@ -243,7 +269,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                     )}
                   </div>
                 </div>
-                
+
                 {/* Outils */}
                 <div className="flex items-center space-x-1">
                   <button
@@ -253,7 +279,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                   >
                     <RefreshCw size={16} />
                   </button>
-                  
+
                   <button
                     onClick={showDiagnostic}
                     className="text-gray-500 hover:text-orange-500 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-md transition"
@@ -261,7 +287,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                   >
                     <AlertCircle size={16} />
                   </button>
-                  
+
                   <button
                     onClick={connectToGanache}
                     className="text-gray-500 hover:text-green-500 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-md transition"
@@ -283,7 +309,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                 >
                   <span>Connecter</span>
                 </button>
-                
+
                 {/* Outils */}
                 <div className="flex items-center space-x-1">
                   <button
@@ -296,7 +322,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                 </div>
               </div>
             )}
-            
+
             {/* Bouton du menu mobile */}
             <button
               className="md:hidden ml-4 text-gray-600 hover:text-gray-800 bg-gray-100 p-1.5 rounded-md"
@@ -307,7 +333,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
           </div>
         </div>
       </div>
-      
+
       {/* Menu mobile */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-white border-t shadow-inner">
@@ -343,6 +369,19 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                   <LayoutDashboard size={18} className="mr-2" /> Mon Espace
                 </button>
               )}
+
+              {/* Bouton Tutoriel - visible seulement pour les non-admins */}
+              {!isAdmin && (
+                <button
+                  onClick={() => {
+                    setActiveTab('tutorial');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'tutorial' ? 'bg-blue-100 text-[#2A3B8C]' : 'text-gray-600 hover:bg-gray-100'}`}
+                >
+                  <HelpCircle size={18} className="mr-2" /> Tutoriel
+                </button>
+              )}
               {isAdmin && (
                 <>
                   <button
@@ -365,7 +404,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                   </button>
                 </>
               )}
-              
+
               <div className="pt-2 border-t">
                 {/* Bouton d'inscription seulement si pas admin */}
                 {!isAdmin && (
@@ -379,7 +418,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                     <User size={18} className="mr-2" /> S'inscrire
                   </button>
                 )}
-                
+
                 {/* Bouton de diagnostic */}
                 <button
                   onClick={() => {
@@ -390,7 +429,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                 >
                   <AlertCircle size={18} className="mr-2" /> Diagnostic
                 </button>
-                
+
                 {/* Bouton de déconnexion pour mobile */}
                 {isConnected && (
                   <button
@@ -404,7 +443,7 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                   </button>
                 )}
               </div>
-              
+
               {/* Section compte (si connecté) */}
               {account && (
                 <div className="mt-3 pt-2 border-t">

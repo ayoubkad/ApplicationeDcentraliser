@@ -16,8 +16,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
       
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x8c54D4b8b95e3C9B61df1dFF36b4068bC778907B', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x8c54D4b8b95e3C9B61df1dFF36b4068bC778907B'  // Ganache - Adresse déployée
+      1337: '0x450f181b2455311EcD1dACA4e7b4883F7f4a3546', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0x450f181b2455311EcD1dACA4e7b4883F7f4a3546'  // Ganache - Adresse déployée
     };
     
     // Cache local des utilisateurs inscrits
@@ -28,7 +28,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
     
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x8c54D4b8b95e3C9B61df1dFF36b4068bC778907B';
+    this.contractAddress = '0x450f181b2455311EcD1dACA4e7b4883F7f4a3546';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
