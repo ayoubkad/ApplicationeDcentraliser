@@ -18,28 +18,23 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
   const booksPerPage = 8;
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Charger les livres depuis la blockchain
+  // Charger les livres depuis la blockchain sans nécessiter de connexion à MetaMask
   const loadBooks = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // Vérifier si Web3Service est initialisé
-      if (!web3Service.isInitialized()) {
-        await web3Service.initialize();
-      }
-      
-      console.log("Chargement des livres depuis le contrat...");
-      
-      // Utiliser la nouvelle fonction getAllLivres pour récupérer les livres avec toutes leurs métadonnées
+      console.log("Chargement des livres sans nécessiter de connexion à MetaMask...");
+
+      // Utiliser la nouvelle fonction getBooksWithoutConnection pour récupérer les livres sans connexion
       const livresComplets = await web3Service.getAllLivres();
       console.log("Livres complets récupérés depuis IPFS et blockchain:", livresComplets);
-      
+
       // S'assurer que les livres sont correctement triés par ID pour afficher les plus récents
       const livresTries = livresComplets.sort((a, b) => Number(b.id) - Number(a.id));
-      
+
       setBooks(livresTries);
       calculateStats(livresTries);
-      
+
       // Réinitialiser la page si nécessaire
       if (currentPage > 1 && livresTries.length <= (currentPage - 1) * booksPerPage) {
         setCurrentPage(1);
@@ -58,10 +53,10 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
       setStats({ total: 0, available: 0, categories: {} });
       return;
     }
-    
+
     const categoriesCount = {};
     let availableCount = 0;
-    
+
     bookList.forEach(book => {
       // Compter par catégorie
       if (book.category) {
@@ -71,13 +66,13 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
           categoriesCount[book.category] = 1;
         }
       }
-      
+
       // Compter les livres disponibles
       if (book.isAvailable) {
         availableCount++;
       }
     });
-    
+
     setStats({
       total: bookList.length,
       available: availableCount,
@@ -94,7 +89,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
   // Gestionnaire d'événement pour bookAdded
   const handleBookAdded = useCallback((event) => {
     console.log("Événement bookAdded reçu:", event.detail);
-    
+
     // Afficher une notification temporaire pour indiquer l'ajout du livre
     const newBookTitle = event.detail.title;
     const bookInfo = document.createElement('div');
@@ -110,17 +105,17 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
       </div>
     `;
     document.body.appendChild(bookInfo);
-    
+
     // Supprimer la notification après 3 secondes
     setTimeout(() => {
       if (bookInfo.parentNode) {
         bookInfo.parentNode.removeChild(bookInfo);
       }
     }, 3000);
-    
+
     // Rafraîchir la liste des livres
     setRefreshTrigger(prev => prev + 1);
-    
+
     // Forcer un nouveau chargement des livres
     loadBooks();
   }, [loadBooks]);
@@ -128,7 +123,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
   // Gestionnaire d'événement pour bookBorrowed
   const handleBookBorrowed = useCallback((event) => {
     console.log("Événement bookBorrowed reçu:", event.detail);
-    
+
     // Rafraîchir la liste des livres pour mettre à jour les statuts
     loadBooks();
   }, [loadBooks]);
@@ -136,7 +131,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
   // Gestionnaire d'événement pour bookReturned
   const handleBookReturned = useCallback((event) => {
     console.log("Événement bookReturned reçu:", event.detail);
-    
+
     // Rafraîchir la liste des livres pour mettre à jour les statuts
     loadBooks();
   }, [loadBooks]);
@@ -144,13 +139,13 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
   // Charger les livres au montage du composant et quand isConnected change
   useEffect(() => {
     loadBooks();
-    
+
     // Écouter les événements d'ajout de livre et de rafraîchissement
     window.addEventListener('bookAdded', handleBookAdded);
     window.addEventListener('refreshBooks', handleRefreshBooks);
     window.addEventListener('bookBorrowed', handleBookBorrowed);
     window.addEventListener('bookReturned', handleBookReturned);
-    
+
     return () => {
       window.removeEventListener('bookAdded', handleBookAdded);
       window.removeEventListener('refreshBooks', handleRefreshBooks);
@@ -179,7 +174,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
       }
     `;
     document.head.appendChild(style);
-    
+
     return () => {
       document.head.removeChild(style);
     };
@@ -190,34 +185,34 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
     // Si le catalogue est vide après le chargement et qu'il n'y a pas d'erreur, forcer un rechargement
     if (!loading && books.length === 0 && !error) {
       console.log("Aucun livre trouvé après le chargement initial, tentative de rechargement...");
-      
+
       // Attendre un moment avant de recharger
       const timer = setTimeout(() => {
         console.log("Rechargement forcé du catalogue...");
-        
+
         // Réinitialiser le service Web3 si nécessaire
         web3Service.resetState(false);
-        
+
         // Puis recharger les livres
         loadBooks();
       }, 2000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [loading, books.length, error, loadBooks]);
-  
+
   // Afficher un message dans la console si aucun livre n'est trouvé après le chargement
   useEffect(() => {
     if (!loading && books.length === 0) {
       console.log("=== DIAGNOSTIC CATALOGUE ===");
-      console.log("État du catalogue:", { 
-        livresChargés: books.length, 
-        enChargement: loading, 
-        erreur: error, 
-        filtres: { 
-          catégorie: categoryFilter, 
+      console.log("État du catalogue:", {
+        livresChargés: books.length,
+        enChargement: loading,
+        erreur: error,
+        filtres: {
+          catégorie: categoryFilter,
           disponibilité: availabilityFilter,
-          recherche: search 
+          recherche: search
         }
       });
     }
@@ -229,28 +224,28 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
     if (!books || books.length === 0) {
       return [];
     }
-    
+
     // Filtrage
     const filtered = books.filter(book => {
-      const matchesSearch = 
-        (book.title && book.title.toLowerCase().includes(search.toLowerCase())) || 
+      const matchesSearch =
+        (book.title && book.title.toLowerCase().includes(search.toLowerCase())) ||
         (book.author && book.author.toLowerCase().includes(search.toLowerCase())) ||
         (book.isbn && book.isbn.includes(search));
-      
-      const matchesCategory = categoryFilter === '' || 
+
+      const matchesCategory = categoryFilter === '' ||
                              (book.category && book.category === categoryFilter);
-      
-      const matchesAvailability = availabilityFilter === '' || 
-                                 (availabilityFilter === 'available' && book.isAvailable) || 
+
+      const matchesAvailability = availabilityFilter === '' ||
+                                 (availabilityFilter === 'available' && book.isAvailable) ||
                                  (availabilityFilter === 'borrowed' && !book.isAvailable);
-      
+
       return matchesSearch && matchesCategory && matchesAvailability;
     });
 
     // Tri
     return filtered.sort((a, b) => {
       let comparison = 0;
-      
+
       // Tri par différents champs
       if (sortBy === 'title') {
         comparison = (a.title || '').localeCompare(b.title || '');
@@ -267,7 +262,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
         // Tri par ID (plus récent en premier par défaut)
         comparison = parseInt(a.id) - parseInt(b.id);
       }
-      
+
       // Inverser le tri si descendant
       return sortDirection === 'asc' ? comparison : -comparison;
     });
@@ -310,6 +305,19 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
+      {/* Bannière informative pour les utilisateurs non connectés */}
+      {!isConnected && (
+        <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded-md shadow-sm">
+          <div className="flex items-start">
+            <Info className="h-5 w-5 mr-2 mt-0.5" />
+            <div>
+              <p className="font-medium">Consultation sans inscription</p>
+              <p className="text-sm">Vous pouvez consulter le catalogue sans vous connecter. Pour emprunter un livre, vous devrez vous connecter avec MetaMask et vous inscrire.</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="flex flex-col md:flex-row justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-[#2A3B8C] mb-4 md:mb-0">Catalogue des Livres</h1>
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
@@ -342,8 +350,8 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
           >
             <Filter size={18} className="mr-2 text-[#2A3B8C]" />
             <span>{isFiltersVisible ? "Masquer les filtres" : "Filtres et tri"}</span>
-            {isFiltersVisible ? 
-              <ArrowUp size={18} className="ml-2 text-gray-500" /> : 
+            {isFiltersVisible ?
+              <ArrowUp size={18} className="ml-2 text-gray-500" /> :
               <ArrowDown size={18} className="ml-2 text-gray-500" />
             }
           </button>
@@ -356,7 +364,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
               if (refreshButton) {
                 refreshButton.classList.add('animate-spin');
               }
-              
+
               // Petit délai avant de charger pour montrer l'animation
               setTimeout(() => {
                 loadBooks().finally(() => {
@@ -542,7 +550,7 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
       {!loading && filteredBooks.length > booksPerPage && (
         <div className="flex justify-center mt-8">
           <nav className="flex items-center space-x-1" aria-label="Pagination">
-            <button 
+            <button
               className={`px-3 py-1.5 rounded ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'hover:bg-[#F8F9FA] text-[#2A3B8C]'}`}
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
@@ -550,11 +558,11 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
             >
               Précédent
             </button>
-            
+
             <div className="flex space-x-1">
               {Array.from({ length: Math.min(totalPages, 5) }).map((_, index) => {
                 let pageNumber;
-                
+
                 // Logique avancée pour afficher les pages correctement
                 if (totalPages <= 5) {
                   // Moins de 5 pages au total, afficher toutes
@@ -569,9 +577,9 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
                   // Au milieu, afficher 2 avant et 2 après la page actuelle
                   pageNumber = currentPage - 2 + index;
                 }
-                
+
                 return (
-                  <button 
+                  <button
                     key={pageNumber}
                     className={`px-3 py-1.5 rounded-md ${currentPage === pageNumber ? 'bg-[#2A3B8C] text-white font-medium' : 'hover:bg-gray-100 text-gray-700'}`}
                     onClick={() => setCurrentPage(pageNumber)}
@@ -582,8 +590,8 @@ const CatalogTab = ({ handleBorrowBook, isConnected, isRegistered }) => {
                 );
               })}
             </div>
-            
-            <button 
+
+            <button
               className={`px-3 py-1.5 rounded ${currentPage === totalPages ? 'text-gray-400 cursor-not-allowed' : 'hover:bg-[#F8F9FA] text-[#2A3B8C]'}`}
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}

@@ -19,6 +19,7 @@
     "chai-as-promised": "^7.1.1",
     "core-js-pure": "^3.41.0",
     "dotenv": "^16.5.0",
+    "framer-motion": "^12.10.5",
     "ipfs-http-client": "^60.0.1",
     "library-dapp": "file:",
     "lucide-react": "^0.294.0",

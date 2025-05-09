@@ -1,406 +1,381 @@
 import React, { useState } from 'react';
 import {
-  Wallet,
-  BookOpen,
-  ChevronRight,
-  ChevronDown,
-  Download,
-  UserPlus,
-  RefreshCw,
-  ArrowRight,
-  CheckCircle,
-  AlertCircle,
-  HelpCircle,
-  BookmarkIcon,
-  RotateCw,
-  Info
+  Wallet, BookOpen, ChevronDown, Download, UserPlus,
+  RefreshCw, CheckCircle, AlertCircle, HelpCircle,
+  BookmarkIcon, RotateCw, Info
 } from 'lucide-react';
+
+// Composant InfoBox amélioré avec des couleurs Tailwind plus cohérentes
+const InfoBox = ({ children, type = 'info' }) => {
+  const config = {
+    info: { bgColor: 'bg-blue-50', borderColor: 'border-blue-500', textColor: 'text-blue-700', icon: Info },
+    warning: { bgColor: 'bg-amber-50', borderColor: 'border-amber-500', textColor: 'text-amber-700', icon: AlertCircle },
+    success: { bgColor: 'bg-emerald-50', borderColor: 'border-emerald-500', textColor: 'text-emerald-700', icon: CheckCircle },
+    help: { bgColor: 'bg-indigo-50', borderColor: 'border-indigo-500', textColor: 'text-indigo-700', icon: HelpCircle }
+  }[type];
+
+  const Icon = config.icon;
+
+  return (
+    <div className={`${config.bgColor} border-l-4 ${config.borderColor} p-4 rounded-lg flex items-start mb-4 shadow-sm`}>
+      <Icon className={`${config.textColor} mr-3 flex-shrink-0`} size={20} />
+      <div className="text-sm">{children}</div>
+    </div>
+  );
+};
+
+// Composant de section optimisé
+const TutorialSection = ({
+  id,
+  title,
+  icon: Icon,
+  children,
+  expandedSection,
+  setExpandedSection
+}) => {
+  const isExpanded = expandedSection === id;
+
+  return (
+    <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+      <button
+        onClick={() => setExpandedSection(isExpanded ? null : id)}
+        className={`w-full p-5 flex justify-between items-center transition-colors duration-300 ${
+          isExpanded ? 'bg-indigo-50' : 'bg-white hover:bg-gray-50'
+        }`}
+      >
+        <div className="flex items-center space-x-4">
+          <div className={`p-2 rounded-lg transition-colors duration-300 ${
+            isExpanded ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+          }`}>
+            <Icon size={20} />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+        </div>
+        <ChevronDown
+          className={`transform transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''} text-gray-500`}
+          size={20}
+        />
+      </button>
+
+      {isExpanded && (
+        <div className="p-5 bg-white border-t border-gray-100 animate-fadeIn">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
   const [expandedSection, setExpandedSection] = useState('welcome');
+  const [quickStart, setQuickStart] = useState(false);
 
-  const toggleSection = (section) => {
-    setExpandedSection(expandedSection === section ? null : section);
-  };
+  const sections = [
+    { id: 'welcome', title: 'Bienvenue', icon: Info },
+    { id: 'metamask', title: 'Configuration MetaMask', icon: Wallet },
+    { id: 'connection', title: 'Connexion', icon: RefreshCw },
+    { id: 'registration', title: 'Inscription', icon: UserPlus },
+    { id: 'borrowing', title: 'Emprunter et Retourner', icon: BookOpen }
+  ];
 
-  const TutorialSection = ({ id, title, icon, children }) => {
-    const isExpanded = expandedSection === id;
-
-    return (
-      <div className="mb-6 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-        <button
-          className={`w-full flex items-center justify-between p-4 text-left ${
-            isExpanded ? 'bg-blue-50' : 'bg-white'
-          }`}
-          onClick={() => toggleSection(id)}
-        >
-          <div className="flex items-center">
-            <div className={`p-2 rounded-full ${isExpanded ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-              {icon}
-            </div>
-            <h3 className="ml-3 text-lg font-semibold">{title}</h3>
-          </div>
-          {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-        </button>
-
-        {isExpanded && (
-          <div className="p-4 bg-white border-t border-gray-200">
-            {children}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const progress = ((sections.findIndex(s => s.id === expandedSection) + 1) / sections.length) * 100;
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-gradient-to-r from-blue-700 to-indigo-800 text-white rounded-lg p-8 mb-8">
-        <h1 className="text-3xl font-bold mb-4">Tutoriel BiblioChain</h1>
-        <p className="text-xl mb-6">
-          Apprenez à utiliser notre bibliothèque décentralisée basée sur la blockchain
-        </p>
-        <div className="flex flex-wrap gap-4">
-          <button
-            onClick={() => setActiveTab('catalog')}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md font-medium flex items-center hover:bg-blue-700 transition"
-          >
-            <BookmarkIcon size={18} className="mr-2" />
-            Explorer le catalogue
-          </button>
-          {!isConnected && (
-            <button
-              onClick={connectToMetaMask}
-              className="bg-white text-blue-700 px-4 py-2 rounded-md font-medium flex items-center hover:bg-blue-50 transition"
-            >
-              <Wallet size={18} className="mr-2" />
-              Connecter MetaMask (optionnel)
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold mb-4 text-gray-800">Guide d'utilisation de BiblioChain</h2>
-        <p className="text-gray-600 mb-4">
-          BiblioChain est une bibliothèque décentralisée qui utilise la technologie blockchain pour gérer les emprunts et retours de livres de manière transparente et sécurisée. Ce tutoriel vous guidera à travers les étapes nécessaires pour commencer à utiliser notre plateforme.
-        </p>
-      </div>
-
-      <TutorialSection
-        id="welcome"
-        title="Bienvenue dans le tutoriel BiblioChain"
-        icon={<Info size={20} />}
-      >
-        <div className="space-y-4">
-          <p>
-            Vous pouvez explorer ce tutoriel sans avoir besoin de vous connecter avec MetaMask ou de créer un compte.
+    <div className="max-w-4xl mx-auto px-4 py-6">
+      {/* En-tête avec gradient amélioré */}
+      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-800 text-white rounded-2xl p-8 mb-8 shadow-xl">
+        <div className="max-w-2xl mx-auto">
+          <h1 className="text-4xl font-bold mb-4">Guide BiblioChain</h1>
+          <p className="text-lg opacity-90 mb-6">
+            Maîtrisez notre plateforme de bibliothèque décentralisée en quelques étapes
           </p>
-
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
-            <div className="flex">
-              <Info size={24} className="text-blue-500 mr-2 flex-shrink-0" />
-              <p>
-                <strong>Bon à savoir :</strong> Pour emprunter ou retourner des livres, vous aurez besoin de vous connecter avec MetaMask et de vous inscrire sur la plateforme. Cependant, vous pouvez explorer le catalogue de livres sans connexion.
-              </p>
-            </div>
-          </div>
-
-          <h4 className="font-semibold text-lg mt-6">Ce que vous pouvez faire sans connexion :</h4>
-          <ul className="list-disc pl-5 space-y-2">
-            <li>Explorer le catalogue de livres</li>
-            <li>Consulter les détails des livres disponibles</li>
-            <li>Apprendre comment fonctionne la plateforme via ce tutoriel</li>
-          </ul>
-
-          <h4 className="font-semibold text-lg mt-6">Ce qui nécessite une connexion :</h4>
-          <ul className="list-disc pl-5 space-y-2">
-            <li>Emprunter des livres</li>
-            <li>Retourner des livres empruntés</li>
-            <li>Accéder à votre espace personnel</li>
-            <li>Voir votre historique d'emprunts</li>
-          </ul>
-        </div>
-      </TutorialSection>
-
-      <TutorialSection
-        id="metamask"
-        title="1. Installation et configuration de MetaMask"
-        icon={<Wallet size={20} />}
-      >
-        <div className="space-y-4">
-          <h4 className="font-semibold text-lg">Qu'est-ce que MetaMask ?</h4>
-          <p>
-            MetaMask est un portefeuille de cryptomonnaies qui se présente sous forme d'extension de navigateur. Il vous permet d'interagir avec la blockchain Ethereum et les applications décentralisées (dApps) comme BiblioChain.
-          </p>
-
-          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
-            <div className="flex">
-              <AlertCircle size={24} className="text-yellow-500 mr-2 flex-shrink-0" />
-              <p>
-                <strong>Important :</strong> MetaMask est nécessaire pour utiliser BiblioChain. Sans lui, vous ne pourrez pas emprunter ou retourner des livres.
-              </p>
-            </div>
-          </div>
-
-          <h4 className="font-semibold text-lg mt-6">Comment installer MetaMask</h4>
-          <ol className="list-decimal pl-5 space-y-3">
-            <li>
-              <strong>Téléchargez l'extension :</strong> Visitez le <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">site officiel de MetaMask</a> et téléchargez l'extension pour votre navigateur (Chrome, Firefox, Brave, Edge).
-            </li>
-            <li>
-              <strong>Installez l'extension :</strong> Suivez les instructions d'installation spécifiques à votre navigateur.
-            </li>
-            <li>
-              <strong>Créez un portefeuille :</strong> Après l'installation, cliquez sur "Créer un portefeuille" et suivez les étapes pour créer votre portefeuille.
-            </li>
-            <li>
-              <strong>Sécurisez votre phrase de récupération :</strong> MetaMask vous fournira une phrase de récupération de 12 mots. Notez-la et conservez-la en lieu sûr. Cette phrase est la seule façon de récupérer votre portefeuille en cas de perte d'accès.
-            </li>
-          </ol>
-
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded mt-4">
-            <div className="flex">
-              <HelpCircle size={24} className="text-blue-500 mr-2 flex-shrink-0" />
-              <p>
-                <strong>Conseil :</strong> N'oubliez jamais votre mot de passe et ne partagez jamais votre phrase de récupération avec qui que ce soit.
-              </p>
-            </div>
-          </div>
-        </div>
-      </TutorialSection>
-
-      <TutorialSection
-        id="connection"
-        title="2. Connexion à BiblioChain avec MetaMask"
-        icon={<RefreshCw size={20} />}
-      >
-        <div className="space-y-4">
-          <p>
-            Une fois MetaMask installé, vous pouvez vous connecter à BiblioChain en suivant ces étapes :
-          </p>
-
-          <ol className="list-decimal pl-5 space-y-3">
-            <li>
-              <strong>Ouvrez MetaMask :</strong> Cliquez sur l'icône de MetaMask dans votre navigateur pour vous assurer que vous êtes connecté à votre portefeuille.
-            </li>
-            <li>
-              <strong>Connectez-vous à BiblioChain :</strong> Sur notre site, cliquez sur le bouton "Se connecter avec MetaMask" dans le menu de navigation.
-            </li>
-            <li>
-              <strong>Autorisez la connexion :</strong> MetaMask vous demandera d'autoriser la connexion à BiblioChain. Cliquez sur "Connecter" pour approuver.
-            </li>
-            <li>
-              <strong>Vérifiez la connexion :</strong> Une fois connecté, votre adresse de portefeuille apparaîtra dans le coin supérieur droit de l'écran.
-            </li>
-          </ol>
-
-          <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded mt-4">
-            <div className="flex">
-              <CheckCircle size={24} className="text-green-500 mr-2 flex-shrink-0" />
-              <p>
-                <strong>Succès :</strong> Lorsque vous êtes correctement connecté, vous verrez votre adresse de portefeuille abrégée (ex: 0x1234...5678) dans la barre de navigation.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center">
-            <button
-              onClick={!isConnected ? connectToMetaMask : null}
-              className={`px-4 py-2 rounded-md font-medium flex items-center mx-auto ${
-                isConnected
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-              disabled={isConnected}
-            >
-              <Wallet size={18} className="mr-2" />
-              {isConnected ? 'Déjà connecté' : 'Connecter MetaMask (optionnel pour explorer le tutoriel)'}
-            </button>
-          </div>
-        </div>
-      </TutorialSection>
-
-      <TutorialSection
-        id="registration"
-        title="3. Inscription sur BiblioChain"
-        icon={<UserPlus size={20} />}
-      >
-        <div className="space-y-4">
-          <p>
-            Après avoir connecté votre portefeuille MetaMask, vous devez vous inscrire sur BiblioChain pour pouvoir emprunter des livres :
-          </p>
-
-          <ol className="list-decimal pl-5 space-y-3">
-            <li>
-              <strong>Accédez à la page d'inscription :</strong> Après vous être connecté avec MetaMask, vous serez automatiquement redirigé vers la page d'inscription si vous n'êtes pas encore inscrit.
-            </li>
-            <li>
-              <strong>Remplissez le formulaire :</strong> Entrez vos informations personnelles (nom, prénom, statut - étudiant ou professeur).
-            </li>
-            <li>
-              <strong>Confirmez la transaction :</strong> Cliquez sur "S'inscrire" et confirmez la transaction dans MetaMask. Cette transaction enregistre vos informations sur la blockchain.
-            </li>
-            <li>
-              <strong>Attendez la confirmation :</strong> L'inscription peut prendre quelques instants pendant que la transaction est validée sur la blockchain.
-            </li>
-          </ol>
-
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded mt-4">
-            <div className="flex">
-              <HelpCircle size={24} className="text-blue-500 mr-2 flex-shrink-0" />
-              <p>
-                <strong>Note :</strong> L'inscription ne nécessite qu'une seule transaction sur la blockchain. Une fois inscrit, vous n'aurez plus besoin de répéter ce processus.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => setActiveTab('login')}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md font-medium flex items-center mx-auto hover:bg-blue-700 transition"
-            >
-              <UserPlus size={18} className="mr-2" />
-              Aller à la page d'inscription
-            </button>
-          </div>
-        </div>
-      </TutorialSection>
-
-      <TutorialSection
-        id="borrowing"
-        title="4. Emprunter et retourner des livres"
-        icon={<BookOpen size={20} />}
-      >
-        <div className="space-y-4">
-          <h4 className="font-semibold text-lg">Emprunter un livre</h4>
-          <p>
-            Une fois inscrit, vous pouvez emprunter des livres de notre bibliothèque :
-          </p>
-
-          <ol className="list-decimal pl-5 space-y-3">
-            <li>
-              <strong>Parcourez le catalogue :</strong> Accédez au catalogue de livres en cliquant sur "Catalogue" dans le menu de navigation.
-            </li>
-            <li>
-              <strong>Sélectionnez un livre :</strong> Trouvez un livre qui vous intéresse et cliquez sur "Emprunter".
-            </li>
-            <li>
-              <strong>Confirmez la transaction :</strong> MetaMask vous demandera de confirmer la transaction. Cette transaction enregistre votre emprunt sur la blockchain.
-            </li>
-            <li>
-              <strong>Accédez au livre :</strong> Une fois la transaction confirmée, vous pourrez accéder au contenu du livre depuis votre espace personnel.
-            </li>
-          </ol>
-
-          <h4 className="font-semibold text-lg mt-6">Retourner un livre</h4>
-          <p>
-            Pour retourner un livre emprunté :
-          </p>
-
-          <ol className="list-decimal pl-5 space-y-3">
-            <li>
-              <strong>Accédez à votre espace :</strong> Cliquez sur "Mon Espace" dans le menu de navigation.
-            </li>
-            <li>
-              <strong>Trouvez le livre :</strong> Localisez le livre que vous souhaitez retourner dans la liste de vos emprunts actifs.
-            </li>
-            <li>
-              <strong>Retournez le livre :</strong> Cliquez sur le bouton "Retourner" à côté du livre.
-            </li>
-            <li>
-              <strong>Confirmez la transaction :</strong> Approuvez la transaction dans MetaMask pour finaliser le retour.
-            </li>
-          </ol>
-
-          <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded mt-4">
-            <div className="flex">
-              <CheckCircle size={24} className="text-green-500 mr-2 flex-shrink-0" />
-              <p>
-                <strong>Système de réputation :</strong> Retourner les livres à temps améliore votre score de réputation, ce qui peut vous donner accès à des fonctionnalités supplémentaires à l'avenir.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={() => setActiveTab('catalog')}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md font-medium flex items-center mx-auto hover:bg-blue-700 transition"
+              className="bg-white/15 hover:bg-white/25 px-5 py-3 rounded-xl font-medium flex items-center transition-all duration-300 backdrop-blur-sm"
             >
               <BookmarkIcon size={18} className="mr-2" />
               Explorer le catalogue
             </button>
           </div>
         </div>
-      </TutorialSection>
+      </div>
 
-      <TutorialSection
-        id="troubleshooting"
-        title="5. Résolution des problèmes courants"
-        icon={<AlertCircle size={20} />}
-      >
-        <div className="space-y-4">
-          <h4 className="font-semibold text-lg">Problèmes de connexion</h4>
-
-          <div className="bg-gray-50 p-4 rounded border border-gray-200">
-            <p className="font-medium">MetaMask ne se connecte pas à BiblioChain</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Vérifiez que MetaMask est déverrouillé (connecté)</li>
-              <li>Assurez-vous d'être sur le bon réseau (Ethereum Sepolia)</li>
-              <li>Essayez de rafraîchir la page</li>
-              <li>Cliquez sur le bouton "Rafraîchir la connexion" dans le menu de votre compte</li>
-            </ul>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded border border-gray-200 mt-4">
-            <p className="font-medium">Les transactions échouent ou restent en attente</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Vérifiez que vous avez suffisamment d'ETH pour payer les frais de transaction</li>
-              <li>Essayez d'augmenter le "Gas Price" dans MetaMask pour accélérer la transaction</li>
-              <li>Si une transaction reste bloquée, vous pouvez utiliser la fonction "Remplacer" dans MetaMask</li>
-            </ul>
-          </div>
-
-          <h4 className="font-semibold text-lg mt-6">Obtenir de l'ETH de test</h4>
-          <p>
-            Pour utiliser BiblioChain sur le réseau de test Sepolia, vous aurez besoin d'ETH de test :
-          </p>
-          <ol className="list-decimal pl-5 space-y-2">
-            <li>Visitez le <a href="https://sepoliafaucet.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Sepolia Faucet</a></li>
-            <li>Connectez-vous avec votre compte Alchemy ou créez-en un</li>
-            <li>Entrez votre adresse Ethereum et demandez des ETH de test</li>
-            <li>Attendez quelques minutes pour recevoir vos ETH de test</li>
-          </ol>
-
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded mt-4">
-            <div className="flex">
-              <HelpCircle size={24} className="text-blue-500 mr-2 flex-shrink-0" />
-              <p>
-                <strong>Besoin d'aide supplémentaire ?</strong> N'hésitez pas à contacter notre équipe de support à support@bibliochain.com
-              </p>
-            </div>
-          </div>
+      {/* Barre de progression améliorée */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium text-gray-600">Progression</span>
+          <span className="text-sm font-medium text-indigo-600">{Math.round(progress)}%</span>
         </div>
-      </TutorialSection>
+        <div className="h-3 bg-gray-100 rounded-full overflow-hidden shadow-inner">
+          <div
+            className="h-full bg-gradient-to-r from-indigo-600 to-blue-400 transition-all duration-700 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
 
-      <div className="mt-8 text-center">
-        <p className="text-gray-600 mb-4">Prêt à commencer votre expérience avec BiblioChain ?</p>
-        <div className="flex flex-wrap justify-center gap-4">
+      {/* Toggle pour le mode Quick Start */}
+      <div className="mb-6 flex justify-end">
+        <button
+          onClick={() => setQuickStart(!quickStart)}
+          className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-300 ${
+            quickStart
+              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          <RotateCw size={16} className="mr-2" />
+          {quickStart ? 'Mode détaillé' : 'Mode rapide'}
+        </button>
+      </div>
+
+      {/* Sections de contenu */}
+      <div className="space-y-5">
+        {sections.map((section) => (
+          <TutorialSection
+            key={section.id}
+            id={section.id}
+            title={section.title}
+            icon={section.icon}
+            expandedSection={expandedSection}
+            setExpandedSection={setExpandedSection}
+          >
+            {section.id === 'welcome' && (
+              <div className="space-y-5">
+                <InfoBox>
+                  <p className="font-medium">Vous pouvez explorer librement le catalogue sans connexion.</p>
+                  <p className="mt-2 text-gray-600">
+                    La connexion avec MetaMask est uniquement nécessaire pour les actions impliquant
+                    des transactions blockchain comme l'emprunt ou le retour de livres.
+                  </p>
+                </InfoBox>
+
+                {quickStart ? (
+                  <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                    <h4 className="font-medium text-indigo-800 mb-2">Guide rapide</h4>
+                    <ol className="space-y-2 ml-5 list-decimal text-indigo-700">
+                      <li>Installez MetaMask et créez un portefeuille</li>
+                      <li>Connectez-vous avec le bouton en haut à droite</li>
+                      <li>Inscrivez-vous via le bouton "S'inscrire"</li>
+                      <li>Explorez le catalogue et empruntez des livres</li>
+                    </ol>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
+                      <h4 className="font-semibold text-gray-800 mb-3">Sans connexion</h4>
+                      <ul className="space-y-2 text-gray-600">
+                        <li className="flex items-center">
+                          <CheckCircle size={16} className="text-emerald-500 mr-2" />
+                          Explorer le catalogue
+                        </li>
+                        <li className="flex items-center">
+                          <CheckCircle size={16} className="text-emerald-500 mr-2" />
+                          Consulter les détails
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 shadow-sm">
+                      <h4 className="font-semibold text-indigo-800 mb-3">Avec connexion</h4>
+                      <ul className="space-y-2 text-indigo-700">
+                        <li className="flex items-center">
+                          <AlertCircle size={16} className="text-indigo-500 mr-2" />
+                          Emprunter des livres
+                        </li>
+                        <li className="flex items-center">
+                          <AlertCircle size={16} className="text-indigo-500 mr-2" />
+                          Gérer son espace
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Ajoutez ici le contenu des autres sections */}
+            {section.id === 'metamask' && (
+              <div className="space-y-4">
+                <InfoBox type="info">
+                  <p className="font-medium">MetaMask est votre passeport vers la blockchain.</p>
+                  <p className="mt-2">Cette extension de navigateur vous permet d'interagir avec notre plateforme de manière sécurisée.</p>
+                </InfoBox>
+
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium mb-3">Étapes d'installation :</h4>
+                  <ol className="space-y-3 ml-5 list-decimal">
+                    <li className="text-gray-700">Installer l'extension MetaMask depuis le store de votre navigateur</li>
+                    <li className="text-gray-700">Créer un nouveau portefeuille ou importer un existant</li>
+                    <li className="text-gray-700">Connecter MetaMask au réseau Ethereum</li>
+                  </ol>
+                </div>
+              </div>
+            )}
+
+            {section.id === 'connection' && (
+              <div className="space-y-4">
+                <InfoBox type="warning">
+                  <p className="font-medium">Assurez-vous que MetaMask est installé avant de continuer.</p>
+                </InfoBox>
+
+                <button
+                  onClick={connectToMetaMask}
+                  className="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 p-4 rounded-lg flex items-center justify-center transition-colors"
+                >
+                  <Wallet size={20} className="mr-2" />
+                  <span>Connecter avec MetaMask</span>
+                </button>
+
+                {isConnected && (
+                  <div className="mt-4 p-4 bg-green-50 border border-green-100 rounded-lg">
+                    <div className="flex items-center text-green-700 mb-2">
+                      <CheckCircle size={18} className="mr-2" />
+                      <span className="font-medium">Vous êtes connecté !</span>
+                    </div>
+                    <p className="text-sm text-green-600">Votre portefeuille est maintenant lié à BiblioChain. Vous pouvez passer à l'étape suivante.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {section.id === 'registration' && (
+              <div className="space-y-4">
+                <InfoBox type="info">
+                  <p className="font-medium">L'inscription vous permet d'accéder à toutes les fonctionnalités de BiblioChain.</p>
+                  <p className="mt-2">Cette étape nécessite une transaction sur la blockchain pour créer votre profil utilisateur.</p>
+                </InfoBox>
+
+                {!isConnected ? (
+                  <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg">
+                    <div className="flex items-center text-amber-700 mb-2">
+                      <AlertCircle size={18} className="mr-2" />
+                      <span className="font-medium">Connexion requise</span>
+                    </div>
+                    <p className="text-sm text-amber-600 mb-3">Vous devez d'abord vous connecter avec MetaMask avant de pouvoir vous inscrire.</p>
+                    <button
+                      onClick={() => setExpandedSection('connection')}
+                      className="text-sm bg-amber-100 hover:bg-amber-200 text-amber-700 px-4 py-2 rounded-lg transition-colors"
+                    >
+                      Retour à l'étape de connexion
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h4 className="font-medium mb-3">Processus d'inscription :</h4>
+                      <ol className="space-y-3 ml-5 list-decimal">
+                        <li className="text-gray-700">Cliquez sur le bouton "S'inscrire" dans la barre de navigation</li>
+                        <li className="text-gray-700">Remplissez le formulaire avec vos informations</li>
+                        <li className="text-gray-700">Confirmez la transaction dans MetaMask</li>
+                        <li className="text-gray-700">Attendez la confirmation de la blockchain</li>
+                      </ol>
+                    </div>
+
+                    <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                      <h4 className="font-medium text-blue-700 mb-2">Bon à savoir</h4>
+                      <ul className="space-y-2 text-sm text-blue-600">
+                        <li className="flex items-start">
+                          <Info size={16} className="text-blue-500 mr-2 mt-0.5 flex-shrink-0" />
+                          L'inscription ne nécessite qu'une seule transaction blockchain.
+                        </li>
+                        <li className="flex items-start">
+                          <Info size={16} className="text-blue-500 mr-2 mt-0.5 flex-shrink-0" />
+                          Votre réputation commence à 0 et augmente à mesure que vous utilisez le service.
+                        </li>
+                      </ul>
+                    </div>
+
+                    <button
+                      onClick={() => setActiveTab('login')}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-lg flex items-center justify-center transition-colors"
+                    >
+                      <UserPlus size={20} className="mr-2" />
+                      <span>Aller à la page d'inscription</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {section.id === 'borrowing' && (
+              <div className="space-y-4">
+                <InfoBox type="success">
+                  <p className="font-medium">Félicitations ! Vous êtes prêt à emprunter des livres sur BiblioChain.</p>
+                  <p className="mt-2">Découvrez comment emprunter et retourner des livres en quelques étapes simples.</p>
+                </InfoBox>
+
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 shadow-sm">
+                    <h4 className="font-semibold text-indigo-800 mb-3 flex items-center">
+                      <Download size={18} className="mr-2 text-indigo-600" />
+                      Emprunter un livre
+                    </h4>
+                    <ol className="space-y-2 ml-5 list-decimal text-indigo-700">
+                      <li>Parcourez le catalogue et sélectionnez un livre</li>
+                      <li>Cliquez sur "Emprunter"</li>
+                      <li>Confirmez la transaction dans MetaMask</li>
+                      <li>Le livre apparaîtra dans votre espace personnel</li>
+                    </ol>
+                  </div>
+
+                  <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 shadow-sm">
+                    <h4 className="font-semibold text-emerald-800 mb-3 flex items-center">
+                      <RefreshCw size={18} className="mr-2 text-emerald-600" />
+                      Retourner un livre
+                    </h4>
+                    <ol className="space-y-2 ml-5 list-decimal text-emerald-700">
+                      <li>Accédez à votre espace personnel</li>
+                      <li>Trouvez le livre à retourner</li>
+                      <li>Cliquez sur "Retourner"</li>
+                      <li>Confirmez la transaction dans MetaMask</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium mb-3">Points importants :</h4>
+                  <ul className="space-y-2 text-gray-600">
+                    <li className="flex items-start">
+                      <AlertCircle size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
+                      Chaque emprunt et retour nécessite une transaction blockchain
+                    </li>
+                    <li className="flex items-start">
+                      <AlertCircle size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
+                      Respectez la durée d'emprunt pour maintenir une bonne réputation
+                    </li>
+                    <li className="flex items-start">
+                      <CheckCircle size={16} className="text-emerald-500 mr-2 mt-0.5 flex-shrink-0" />
+                      Une bonne réputation vous donne accès à plus de livres simultanément
+                    </li>
+                  </ul>
+                </div>
+
+                <button
+                  onClick={() => setActiveTab('catalog')}
+                  className="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 p-4 rounded-lg flex items-center justify-center transition-colors"
+                >
+                  <BookmarkIcon size={20} className="mr-2" />
+                  <span>Explorer le catalogue</span>
+                </button>
+              </div>
+            )}
+          </TutorialSection>
+        ))}
+      </div>
+
+      {/* CTA final amélioré */}
+      <div className="mt-12 text-center bg-gradient-to-b from-white to-indigo-50 p-8 rounded-2xl">
+        <p className="text-gray-600 mb-5">Prêt à commencer votre voyage ?</p>
+        <div className="flex justify-center gap-3">
           <button
             onClick={() => setActiveTab('catalog')}
-            className="bg-blue-600 text-white px-6 py-3 rounded-md font-medium flex items-center hover:bg-blue-700 transition"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-medium flex items-center transition-all shadow-md hover:shadow-lg"
           >
-            <BookmarkIcon size={20} className="mr-2" />
-            Explorer le catalogue
+            <BookOpen size={20} className="mr-2" />
+            Découvrir les livres
           </button>
-          {!isConnected && (
-            <button
-              onClick={connectToMetaMask}
-              className="bg-gray-800 text-white px-6 py-3 rounded-md font-medium flex items-center hover:bg-gray-900 transition"
-            >
-              <Wallet size={20} className="mr-2" />
-              Connecter MetaMask (optionnel)
-            </button>
-          )}
         </div>
       </div>
     </div>

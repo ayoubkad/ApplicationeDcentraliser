@@ -32,75 +32,31 @@ const App = () => {
     hasValidConnection: false
   });
 
-  // Vérifier la connexion initiale et configurer les écouteurs d'événements MetaMask
+  // Configurer les écouteurs d'événements MetaMask sans connexion automatique
   useEffect(() => {
-    const checkConnection = async () => {
-      setIsLoading(true);
-
-      // Timer de sécurité pour éviter le blocage indéfini de l'écran de chargement
-      const safetyTimer = setTimeout(() => {
-        setIsLoading(false);
-        console.warn("Le chargement a été arrêté par le timer de sécurité");
-      }, 15000);
-
+    const setupEventListeners = async () => {
+      // Ne pas afficher l'indicateur de chargement pour ne pas bloquer l'interface
       try {
         if (window.ethereum) {
-          // Vérifier si l'utilisateur est déjà connecté
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          if (accounts.length > 0) {
-            console.log("Compte déjà connecté:", accounts[0]);
-            const success = await web3Service.initialize();
-            if (success) {
-              setIsConnected(true);
-              setAccount(accounts[0]);
-
-              // Mettre à jour les informations du contrat
-              setContractInfo({
-                address: web3Service.contractAddress,
-                abi: LibraryDAppABI,
-                hasValidConnection: success,
-                networkId: web3Service.networkId,
-                networkName: web3Service.getNetworkName(web3Service.networkId)
-              });
-
-              const registered = await web3Service.isUserRegistered();
-              setIsRegistered(registered);
-              console.log("Utilisateur inscrit:", registered);
-
-              if (registered) {
-                const reputation = await web3Service.getUserReputation();
-                setUserReputation(Number(reputation));
-                console.log("Réputation utilisateur:", reputation);
-
-                // Si l'utilisateur est sur la page d'inscription mais est déjà inscrit,
-                // le rediriger vers le dashboard
-                if (activeTab === 'login') {
-                  console.log("Utilisateur déjà inscrit, redirection vers le dashboard...");
-                  setActiveTab('dashboard');
-                }
-              }
-            }
-          } else {
-            console.log("Aucun compte connecté au démarrage");
-          }
-
-          // Configurer les écouteurs d'événements
+          // Configurer les écouteurs d'événements sans initialiser Web3Service
           window.ethereum.on('accountsChanged', handleAccountsChanged);
           window.ethereum.on('chainChanged', () => {
-            // Mise à jour du contrat lors du changement de réseau
-            setTimeout(async () => {
-              const success = await web3Service.initialize();
-              if (success) {
-                setContractInfo({
-                  address: web3Service.contractAddress,
-                  abi: LibraryDAppABI,
-                  hasValidConnection: success,
-                  networkId: web3Service.networkId,
-                  networkName: web3Service.getNetworkName(web3Service.networkId)
-                });
-                showNotification(`Réseau changé: ${web3Service.getNetworkName(web3Service.networkId)}`, "info");
-              }
-            }, 1000);
+            // Mise à jour du contrat lors du changement de réseau uniquement si l'utilisateur est déjà connecté
+            if (isConnected) {
+              setTimeout(async () => {
+                const success = await web3Service.initialize(false);
+                if (success) {
+                  setContractInfo({
+                    address: web3Service.contractAddress,
+                    abi: LibraryDAppABI,
+                    hasValidConnection: success,
+                    networkId: web3Service.networkId,
+                    networkName: web3Service.getNetworkName(web3Service.networkId)
+                  });
+                  showNotification(`Réseau changé: ${web3Service.getNetworkName(web3Service.networkId)}`, "info");
+                }
+              }, 1000);
+            }
           });
           window.ethereum.on('disconnect', () => {
             setIsConnected(false);
@@ -110,18 +66,14 @@ const App = () => {
           });
         } else {
           console.log("MetaMask n'est pas installé");
-          showNotification("MetaMask n'est pas installé. Veuillez l'installer pour utiliser toutes les fonctionnalités.", "warning");
+          // Ne pas afficher de notification pour ne pas déranger l'utilisateur
         }
       } catch (error) {
-        console.error("Erreur lors de la vérification de connexion:", error);
-        showNotification("Erreur de connexion au démarrage", "error");
-      } finally {
-        clearTimeout(safetyTimer);
-        setIsLoading(false);
+        console.error("Erreur lors de la configuration des écouteurs d'événements:", error);
       }
     };
 
-    checkConnection();
+    setupEventListeners();
 
     // Ajouter un écouteur pour l'événement personnalisé d'ouverture de l'onglet d'inscription
     const openLoginTabHandler = () => {
@@ -179,38 +131,8 @@ const App = () => {
 
   // Écouteur pour les événements de mise à jour de réputation
   useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        const isConnected = await web3Service.isMetaMaskInstalled();
-        setIsConnected(isConnected);
-
-        if (isConnected) {
-          // Vérification de la connexion à MetaMask et initialisation
-          await web3Service.initialize();
-
-          // Récupérer l'adresse du compte
-          const account = web3Service.getAccount();
-          setAccount(account);
-
-          // Vérifier si l'utilisateur est inscrit
-          const registered = await web3Service.isUserRegistered();
-          setIsRegistered(registered);
-
-          // Récupérer la réputation de l'utilisateur s'il est inscrit
-          if (registered) {
-            const reputation = await web3Service.getUserReputation();
-            setUserReputation(Number(reputation));
-            console.log("Réputation de l'utilisateur chargée:", reputation);
-          }
-        }
-      } catch (error) {
-        console.error("Erreur lors de la vérification de la connexion:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkConnection();
+    // Configurer les écouteurs d'événements pour les mises à jour de réputation
+    // sans vérifier la connexion automatiquement
 
     // Ajouter un écouteur pour les mises à jour de réputation
     const reputationUpdatedHandler = (event) => {
@@ -726,8 +648,11 @@ const App = () => {
 
     // Le tutoriel est accessible sans connexion
     if (tab === 'tutorial') return false;
+    
+    // Le catalogue est accessible sans connexion
+    if (tab === 'catalog') return false;
 
-    // Si l'utilisateur n'est pas connecté, désactiver tous les onglets sauf accueil et inscription
+    // Si l'utilisateur n'est pas connecté, désactiver tous les onglets sauf accueil, catalogue et inscription
     if (!isConnected && tab !== 'login') return true;
 
     // Si l'utilisateur est un administrateur
@@ -765,6 +690,7 @@ const App = () => {
 
       // Pour d'autres cas, afficher un message général et rediriger vers la page de connexion
       if (!isConnected) {
+        // Le catalogue est accessible sans connexion, donc on ne redirige pas si l'utilisateur tente d'y accéder
         showNotification("Veuillez connecter votre portefeuille MetaMask pour accéder à cette fonctionnalité.", "warning");
         // Pour les onglets nécessitant une connexion, rediriger vers l'accueil
         setActiveTab('home');

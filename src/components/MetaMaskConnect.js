@@ -28,7 +28,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
   // Copy address to clipboard
   const copyToClipboard = async () => {
     if (!account) return;
-    
+
     try {
       await navigator.clipboard.writeText(account);
       setCopied(true);
@@ -46,34 +46,8 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
     }
   };
 
-  // Check connection and set up event listeners on load
+  // Set up event listeners on load without automatic connection
   useEffect(() => {
-    const checkConnection = async () => {
-      if (window.ethereum) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          if (accounts.length > 0) {
-            const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-            handleAccountsChanged(accounts);
-            handleChainChanged(chainId);
-            
-            // Check if user is registered if web3Service is provided
-            if (web3Service && web3Service.isUserRegistered) {
-              const registered = await web3Service.isUserRegistered();
-              setIsRegistered(registered);
-              
-              if (registered && web3Service.getUserReputation) {
-                const reputation = await web3Service.getUserReputation();
-                setUserReputation(Number(reputation));
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Error checking initial connection:", err);
-        }
-      }
-    };
-
     const setupListeners = () => {
       if (window.ethereum) {
         window.ethereum.on('accountsChanged', handleAccountsChanged);
@@ -82,7 +56,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
       }
     };
 
-    checkConnection();
+    // Only set up listeners, don't check for connection automatically
     setupListeners();
 
     // Clean up listeners on unmount
@@ -93,7 +67,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
         window.ethereum.removeListener('disconnect', handleDisconnect);
       }
     };
-  }, [web3Service]);
+  }, []);
 
   // Handle account changes
   const handleAccountsChanged = async (accounts) => {
@@ -104,30 +78,30 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
       setAccount(newAccount);
       setIsConnected(true);
       setError(null);
-      
+
       // Vérifier si le nouvel utilisateur est déjà inscrit
       if (web3Service && web3Service.isUserRegistered) {
         try {
           const registered = await web3Service.isUserRegistered(newAccount);
           setIsRegistered(registered);
-          
+
           if (registered && web3Service.getUserReputation) {
             const reputation = await web3Service.getUserReputation(newAccount);
             setUserReputation(Number(reputation));
           } else {
             // Informer l'application du changement d'utilisateur non inscrit
-            window.dispatchEvent(new CustomEvent('metamaskAccountChanged', { 
-              detail: { 
+            window.dispatchEvent(new CustomEvent('metamaskAccountChanged', {
+              detail: {
                 account: newAccount,
                 isRegistered: false
-              } 
+              }
             }));
           }
         } catch (err) {
           console.error("Error checking registration status:", err);
         }
       }
-      
+
       if (onConnect) onConnect(newAccount);
     }
   };
@@ -150,19 +124,20 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
       }
 
       if (web3Service && web3Service.initialize) {
-        const success = await web3Service.initialize();
+        // Passer true pour demander explicitement la connexion à MetaMask
+        const success = await web3Service.initialize(true);
         if (success) {
           setIsConnected(true);
           setAccount(web3Service.getAccount());
-          
+
           const chainId = await window.ethereum.request({ method: 'eth_chainId' });
           handleChainChanged(chainId);
-          
+
           // Check if user is registered
           if (web3Service.isUserRegistered) {
             const registered = await web3Service.isUserRegistered();
             setIsRegistered(registered);
-            
+
             if (registered && web3Service.getUserReputation) {
               const reputation = await web3Service.getUserReputation();
               setUserReputation(Number(reputation));
@@ -175,7 +150,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
         // Fallback to direct ethereum request if web3Service not provided
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        
+
         handleAccountsChanged(accounts);
         handleChainChanged(chainId);
       }
@@ -222,7 +197,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
   // Navigate to explorer
   const openExplorer = () => {
     if (!account) return;
-    
+
     const explorerUrls = {
       '0x1': 'https://etherscan.io/address/',
       '0x5': 'https://goerli.etherscan.io/address/',
@@ -232,7 +207,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
       '0xa': 'https://optimistic.etherscan.io/address/',
       '0xaa36a7': 'https://sepolia.etherscan.io/address/',
     };
-    
+
     const baseUrl = explorerUrls[chainId] || 'https://etherscan.io/address/';
     window.open(`${baseUrl}${account}`, '_blank');
   };
@@ -294,23 +269,23 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
                   <span className="font-medium" title={account}>
                     {formatAddress(account)}
                   </span>
-                  <button 
-                    onClick={copyToClipboard} 
-                    className="ml-2 p-1 hover:bg-indigo-800 rounded-md" 
+                  <button
+                    onClick={copyToClipboard}
+                    className="ml-2 p-1 hover:bg-indigo-800 rounded-md"
                     title="Copier l'adresse"
                   >
                     {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
                   </button>
-                  <button 
-                    onClick={openExplorer} 
-                    className="ml-1 p-1 hover:bg-indigo-800 rounded-md" 
+                  <button
+                    onClick={openExplorer}
+                    className="ml-1 p-1 hover:bg-indigo-800 rounded-md"
                     title="Voir sur l'explorateur"
                   >
                     <ExternalLink size={14} />
                   </button>
                 </div>
                 <div className="flex items-center mt-1">
-                  <div 
+                  <div
                     className="w-2 h-2 rounded-full mr-1"
                     style={{ backgroundColor: getNetworkColor() }}
                   ></div>
@@ -359,7 +334,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
                   disabled={chainId === id || isLoading}
                   style={{ borderLeft: `3px solid ${color}` }}
                 >
-                  <div 
+                  <div
                     className="w-2 h-2 rounded-full mr-1"
                     style={{ backgroundColor: color }}
                   ></div>
