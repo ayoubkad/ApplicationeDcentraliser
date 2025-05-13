@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Award, TrendingUp, Download } from 'lucide-react';
-import { toast } from 'react-hot-toast';
+import { toast, Toaster } from 'react-hot-toast';
 import web3Service from '../services/Web3Service';
 import TestButton from './common/TestButton';
 import PdfViewer from './common/PdfViewer';
+import ReturnBookLoadingModal from './common/ReturnBookLoadingModal';
 
 // Fonctions utilitaires IPFS importées depuis un fichier séparé
 import { downloadPdfFromIPFS, triggerDownload, verifyIpfsIntegrity, isValidCid } from '../utils/ipfsUtils';
@@ -265,42 +266,42 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       if (history && history.length > 0) {
         // Convertir et enrichir les éléments de l'historique avec les détails des livres
         console.log("Enrichissement de l'historique avec les détails des livres...");
-        
+
         // Formater la date pour un affichage plus convivial
         const formatDate = (date) => {
           if (!date) return '-';
-          
+
           try {
             // Si la date est déjà une chaîne formatée, la retourner telle quelle
             if (typeof date === 'string' && date.includes('/')) {
               return date;
             }
-            
+
             // Convertir en objet Date si ce n'est pas déjà le cas
             const dateObj = typeof date === 'string' ? new Date(date) : date;
-            
+
             // Vérifier que la date est valide
             if (isNaN(dateObj.getTime())) {
               console.warn("Date invalide:", date);
               return 'Date invalide';
             }
-            
+
             // Formater la date (ex: "25 juin 2023 à 14:30")
             const day = dateObj.getDate();
-            const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 
+            const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
                                 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
             const month = monthNames[dateObj.getMonth()];
             const year = dateObj.getFullYear();
             const hours = dateObj.getHours().toString().padStart(2, '0');
             const minutes = dateObj.getMinutes().toString().padStart(2, '0');
-            
+
             return `${day} ${month} ${year} à ${hours}:${minutes}`;
           } catch (error) {
             console.error("Erreur lors du formatage de la date:", error, date);
             return 'Date invalide';
           }
         };
-        
+
         // Transformer les données de l'historique en objet plus complet
         const historyWithDetails = await Promise.all(
           history.map(async (historyItem) => {
@@ -313,7 +314,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
               let returnTransactionHash = null;
               let isReturned = false;
               let borrowId = historyItem.borrowId || historyItem.id || 0;
-              
+
               // Extraction selon le format
               // Format 1: L'historique est déjà bien formaté par Web3Service
               if (historyItem.bookId && historyItem.borrowDate) {
@@ -337,39 +338,39 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
               // Format 3: Format objet mais avec des clés différentes
               else {
                 bookId = historyItem.bookId || historyItem.book_id || 0;
-                borrowTime = historyItem.borrowDate || historyItem.borrowTime || 
+                borrowTime = historyItem.borrowDate || historyItem.borrowTime ||
                             (historyItem.timestamp ? new Date(historyItem.timestamp) : new Date());
                 returnTime = historyItem.returnDate || historyItem.returnTime || null;
                 isReturned = historyItem.isReturned || historyItem.returned || historyItem.status === 'retourné';
                 borrowTransactionHash = historyItem.transactionHash || historyItem.borrowTransactionHash;
                 returnTransactionHash = historyItem.returnTransactionHash;
               }
-              
+
               // Si l'ID du livre n'est pas valide, ignorer cet élément
               if (!bookId || bookId === '0') {
                 console.warn("ID de livre invalide dans l'historique:", historyItem);
                 return null;
               }
-              
+
               // Récupérer les détails du livre
               const bookDetails = await getBookDetails(bookId);
-              
+
               // Calculer la durée de l'emprunt en jours avec une limite raisonnable
               let duration = 0;
               if (borrowTime && returnTime) {
                 const diffTime = returnTime.getTime() - borrowTime.getTime();
                 duration = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                
+
                 // Limiter la durée à 365 jours maximum (pour éviter les valeurs aberrantes)
                 duration = Math.min(duration, 365);
-                
+
                 // Si la durée est négative (erreur de date), mettre à zéro
                 duration = Math.max(duration, 0);
               }
-              
+
               // Normaliser les dates
               borrowTime = borrowTime || new Date();
-              
+
               // Créer l'objet d'historique avec toutes les informations
               const historyEntry = {
                 id: borrowId.toString(),
@@ -397,11 +398,11 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
             }
           })
         );
-        
+
         // Filtrer les éléments null (erreurs)
         const validHistory = historyWithDetails.filter(item => item !== null);
         console.log(`${validHistory.length}/${history.length} éléments d'historique traités avec succès`);
-        
+
         // Trier par date d'emprunt, du plus récent au plus ancien
         const sortedHistory = validHistory.sort((a, b) => {
           // Pour des raisons de sécurité, vérifier que les dates sont valides
@@ -409,10 +410,10 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
           const dateB = b.borrowTime instanceof Date ? b.borrowTime : new Date();
           return dateB - dateA;
         });
-        
+
         if (sortedHistory && sortedHistory.length > 0) {
           console.log("Historique d'emprunts trié par date:", sortedHistory);
-          
+
           // Validation et correction des dates
           const validateAndFixDates = (item) => {
             // Vérifier si la date d'emprunt est dans le futur (erreur potentielle)
@@ -425,15 +426,15 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
             }
             return item;
           };
-          
+
           // Appliquer la validation des dates
           if (sortedHistory && sortedHistory.length > 0) {
             const validatedHistory = sortedHistory.map(validateAndFixDates);
             setBorrowHistory(validatedHistory);
-            
+
             // Appliquer le filtre actuel à l'historique
             applyHistoryFilter(validatedHistory, historyFilter);
-            
+
             console.log("Historique d'emprunts validé et corrigé:", validatedHistory);
           }
         } else {
@@ -483,7 +484,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
         const newReputation = parseInt(event.detail.reputation);
         console.log("Mise à jour de la réputation:", newReputation);
         setActualReputation(newReputation);
-        
+
         // Afficher un toast de confirmation
         toast.success(`Votre réputation a été mise à jour: ${newReputation}`, {
           duration: 3000,
@@ -495,37 +496,37 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
     // Gérer l'événement de retour de livre
     const handleBookReturned = async (event) => {
       if (!event.detail) return;
-      
+
       const { bookId, bookDetails, oldReputation, newReputation } = event.detail;
-      
+
       console.log("Événement de retour détecté:", event.detail);
-      
+
       // Mettre à jour les emprunts actifs
       setUserLoans(prevLoans => prevLoans.filter(loan => loan.bookId.toString() !== bookId.toString()));
-      
+
       // Mettre à jour la réputation si elle a changé
       if (newReputation !== undefined && oldReputation !== undefined) {
         setActualReputation(parseInt(newReputation));
-        
+
         // Calculer le changement pour afficher visuellement l'impact
         const change = parseInt(newReputation) - parseInt(oldReputation);
         const sign = change >= 0 ? '+' : '';
-        
+
         // Afficher un message différent selon le changement de réputation
         if (change !== 0) {
           toast.success(
-            `Livre retourné ! Réputation ${sign}${change} points (${newReputation})`, 
+            `Livre retourné ! Réputation ${sign}${change} points (${newReputation})`,
             { duration: 4000, icon: '📚' }
           );
         } else {
-          toast.success(`Livre retourné ! Votre réputation reste à ${newReputation}`, 
+          toast.success(`Livre retourné ! Votre réputation reste à ${newReputation}`,
             { duration: 3000, icon: '📚' }
           );
         }
       } else {
         toast.success(`Livre retourné avec succès !`, { duration: 3000, icon: '📚' });
       }
-      
+
       // Recharger l'historique après un délai
       setTimeout(() => {
         loadBorrowHistory();
@@ -544,7 +545,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
         });
       }
     };
-    
+
     // Écouter les événements de mise à jour pour l'historique des emprunts
     const handleBookBorrowed = (event) => {
       if (event.detail && event.detail.bookId && event.detail.bookDetails) {
@@ -567,7 +568,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
         loadBorrowHistory();
       }
     };
-    
+
     // Ajouter la fonction pour recharger l'historique après un retour
     const handleBookReturnedHistory = (event) => {
       // Attendre un court instant pour que la blockchain soit mise à jour
@@ -582,12 +583,12 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
     window.addEventListener('bookReturned', handleBookReturnedHistory); // Nouvel écouteur pour l'historique
     window.addEventListener('bookBorrowed', handleBookBorrowed);
     window.addEventListener('openPdfViewer', handleOpenPdfViewer);
-    
+
     // Charger les données initiales
     loadReputationFromBlockchain();
     loadBorrowHistory();
     loadUserLoans();
-    
+
     // Animation de la réputation
     if (actualReputation > 0) {
       const startScore = 0;
@@ -596,19 +597,19 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       const frameDuration = 16; // ~60fps
       const totalFrames = Math.round(duration / frameDuration);
       let frame = 0;
-      
+
       const timer = setInterval(() => {
         frame++;
         const progress = frame / totalFrames;
         const currentScore = Math.floor(startScore + progress * (endScore - startScore));
         setAnimatedScore(currentScore);
-        
+
         if (frame === totalFrames) {
           clearInterval(timer);
         }
       }, frameDuration);
     }
-    
+
     // Nettoyage des écouteurs d'événements
     return () => {
       window.removeEventListener('reputationUpdated', handleReputationUpdate);
@@ -808,16 +809,17 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
             <button
               onClick={() => {
                 toast.dismiss(t.id);
-                toast.loading("Traitement en cours...", { id: "return-loading" });
+                toast((t) => <ReturnBookLoadingModal message="Chargement en cours..." subMessage="Le chargement prend plus de temps que prévu..." />,
+                  { id: "return-loading", duration: 30000 });
                 processBookReturn(bookId, bookTitle);
               }}
-              className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+              className="tutoreel-btn tutoreel-btn-success tutoreel-btn-sm"
             >
               Confirmer
             </button>
             <button
               onClick={() => toast.dismiss(t.id)}
-              className="px-3 py-1 bg-gray-200 text-gray-800 text-sm rounded hover:bg-gray-300"
+              className="tutoreel-btn tutoreel-btn-outline tutoreel-btn-sm"
             >
               Annuler
             </button>
@@ -934,11 +936,13 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
 
   return (
     <div className="container mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold text-[#2A3B8C] mb-6 flex items-center">
-        <Award className="mr-2" /> Mon Espace Personnel
-      </h1>
+      <div className="tutoreel-gradient-header mb-6 rounded-xl">
+        <h1 className="text-2xl font-bold flex items-center">
+          <Award className="mr-2" /> Mon Espace Personnel
+        </h1>
+      </div>
 
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+      <div className="tutoreel-card p-6 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="flex flex-col">
             <div className="flex items-center justify-between mb-4">
@@ -952,7 +956,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                 <span className="text-sm font-medium text-gray-700">{animatedScore}/100</span>
                 <button
                   onClick={() => setShowReputationDetails(!showReputationDetails)}
-                  className="text-[#2A3B8C] text-sm hover:underline"
+                  className="text-academic-blue text-sm hover:underline"
                 >
                   Voir les détails
                 </button>
@@ -972,7 +976,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                   <ul className="space-y-2">
                     {reputationInfo.benefits.map((benefit, index) => (
                       <li key={index} className="flex items-center text-sm">
-                        <TrendingUp className="w-4 h-4 mr-2 text-[#2A3B8C]" />
+                        <TrendingUp className="w-4 h-4 mr-2 text-academic-blue" />
                         {benefit}
                       </li>
                     ))}
@@ -980,7 +984,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                   <div className="mt-4 pt-3 border-t border-gray-200">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Score actuel:</span>
-                      <span className="text-xl font-bold text-[#2A3B8C]">{actualReputation}</span>
+                      <span className="text-xl font-bold text-academic-blue">{actualReputation}</span>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
                       Ce score est enregistré sur la blockchain et évolue en fonction de vos interactions.
@@ -993,7 +997,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 bg-blue-50 rounded-lg">
               <h3 className="text-sm font-medium text-gray-600">Emprunts Total</h3>
-              <p className="text-2xl font-bold text-[#2A3B8C]">{userLoans.length}</p>
+              <p className="text-2xl font-bold text-academic-blue">{userLoans.length}</p>
             </div>
             <div className="p-4 bg-green-50 rounded-lg">
               <h3 className="text-sm font-medium text-gray-600">Retours à Temps</h3>
@@ -1020,13 +1024,13 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       </div>
 
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-[#2A3B8C] mb-4 flex items-center">
+        <h2 className="text-2xl font-bold text-academic-blue mb-4 flex items-center">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
           </svg>
           Mes Livres Empruntés
         </h2>
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="tutoreel-card p-6">
           {loadingBooks ? (
             <div className="animate-pulse space-y-4">
               <div className="h-8 bg-gray-200 rounded w-1/3"></div>
@@ -1195,7 +1199,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
               <p className="text-gray-500 mb-4">Explorez notre catalogue et empruntez des livres pour les voir ici.</p>
               <button
                 onClick={() => setActiveTab('catalog')}
-                className="inline-flex items-center px-4 py-2 bg-[#2A3B8C] text-white rounded-md hover:bg-[#1F2D6B] transition"
+                className="inline-flex items-center tutoreel-btn tutoreel-btn-primary tutoreel-btn-md"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -1208,10 +1212,10 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
       </div>
 
       <div>
-        <h2 className="text-2xl font-bold text-[#2A3B8C] mb-4 flex items-center">
+        <h2 className="text-2xl font-bold text-academic-blue mb-4 flex items-center">
           <Clock className="mr-2" /> Historique d'Emprunts et Retours
         </h2>
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="tutoreel-card p-6">
           {loadingHistory ? (
             <div className="animate-pulse space-y-4">
               <div className="h-8 bg-gray-200 rounded w-1/3"></div>
@@ -1293,7 +1297,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                     </select>
 
                     <button
-                      className="text-xs border border-[#2A3B8C] text-[#2A3B8C] rounded px-2 py-1 hover:bg-[#2A3B8C]/10 transition-colors"
+                      className="tutoreel-btn tutoreel-btn-outline tutoreel-btn-sm text-xs"
                       onClick={() => {
                         // Fonction pour rafraîchir l'historique
                         toast.success("Actualisation de l'historique...", {
@@ -1376,7 +1380,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
               <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead>
-                    <tr className="bg-gradient-to-r from-[#2A3B8C]/90 to-[#2A3B8C]/80 text-white">
+                    <tr className="bg-gradient-to-r from-academic-blue/90 to-academic-blue/80 text-white">
                       <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Titre</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Auteur</th>
                       <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider">Emprunté le</th>
@@ -1593,7 +1597,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                                 item.author === "Information inaccessible" || item.author === "Information non récupérable") && (
                                 <div className="flex items-center mt-1">
                                   <button
-                                    className="text-xs text-[#2A3B8C] hover:text-[#2A3B8C]/80 flex items-center"
+                                    className="text-xs text-academic-blue hover:text-academic-blue/80 flex items-center"
                                     onClick={async () => {
                                       // Afficher un toast de chargement
                                       toast.loading("Rechargement des informations...", {
@@ -1687,7 +1691,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
                             </svg>
                             <p className="text-lg font-medium">Aucun résultat ne correspond à votre filtre</p>
                             <p className="text-sm mt-1">Essayez un autre filtre ou <button
-                              className="text-[#2A3B8C] underline"
+                              className="text-academic-blue underline"
                               onClick={() => {
                                 setHistoryFilter('all');
                                 applyHistoryFilter(borrowHistory, 'all');
@@ -1764,7 +1768,7 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
               </p>
               <button
                 onClick={() => setActiveTab('catalog')}
-                className="px-4 py-2 bg-[#2A3B8C] text-white rounded-md font-medium hover:bg-[#1F2D6B] transition flex items-center"
+                className="tutoreel-btn tutoreel-btn-primary tutoreel-btn-md flex items-center"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -1800,6 +1804,15 @@ const DashboardTab = ({ setActiveTab, handleReturnBook, userReputation = 80 }) =
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .animate-pulse { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
       `}</style>
+
+      {/* Composant Toaster pour afficher les notifications */}
+      <Toaster position="bottom-center" toastOptions={{
+        className: '',
+        style: {
+          background: '#fff',
+          color: '#333',
+        },
+      }} />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import './App.css';
 import web3Service from './services/Web3Service';
 import ipfsService from './services/IPFSService';
 import LibraryDAppABI from './LibraryDAppABI.json';
+import { Toaster } from 'react-hot-toast';
 
 // Composants existants
 import Header from './components/Header';
@@ -648,7 +649,7 @@ const App = () => {
 
     // Le tutoriel est accessible sans connexion
     if (tab === 'tutorial') return false;
-    
+
     // Le catalogue est accessible sans connexion
     if (tab === 'catalog') return false;
 
@@ -860,6 +861,15 @@ const App = () => {
 
       {notification && <Notification notification={notification} setNotification={setNotification} />}
       {isLoading && <LoadingIndicator />}
+
+      {/* Composant Toaster pour les notifications toast */}
+      <Toaster position="bottom-center" toastOptions={{
+        className: '',
+        style: {
+          background: '#fff',
+          color: '#333',
+        },
+      }} />
     </div>
   );
 };

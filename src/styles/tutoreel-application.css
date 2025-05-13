@@ -1,0 +1,720 @@
+/* tutoreel-application.css - Application du design Tutoreel à toute l'application */
+/* Ce fichier applique le design Tutoreel à l'ensemble de l'application sans modifier sa structure */
+
+/* 
+ * NOTE IMPORTANTE :
+ * Pour que les classes comme `bg-white/98` fonctionnent, vous devez étendre l'échelle d'opacité de Tailwind CSS.
+ * Ajoutez le code suivant dans votre fichier `tailwind.config.js` :
+ *
+ * module.exports = {
+ *   theme: {
+ *     extend: {
+ *       opacity: {
+ *         '98': '0.98',
+ *       }
+ *     }
+ *   },
+ *   // Autres configurations
+ * }
+ *
+ * Après cette mise à jour, les classes `bg-white/98` et similaires seront générées correctement.
+ */
+
+/* ===== HEADER ET NAVIGATION ===== */
+
+/* Header principal */
+header.tab-navigation {
+  @apply bg-white/95 backdrop-blur-md shadow-md border-b border-gray-200;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Effet de brillance subtil pour le header */
+header.tab-navigation::after {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  width: 300%;
+  height: 300%;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.05) 0%, rgba(255, 255, 255, 0) 70%);
+  opacity: 0;
+  animation: header-ambient 15s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Boutons de navigation */
+header button {
+  @apply transition-all duration-300 relative overflow-hidden;
+  transform: translateZ(0);
+}
+
+header button::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: #4F46E5;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.3s ease;
+}
+
+header button:hover {
+  @apply text-indigo-600;
+}
+
+header button:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+/* Logo */
+header .logo {
+  @apply text-indigo-600 font-bold;
+}
+
+/* ===== BOUTONS EXISTANTS ===== */
+
+/* Appliquer le style Tutoreel aux boutons existants */
+button,
+.btn,
+[type="button"],
+[type="submit"],
+[type="reset"] {
+  @apply rounded-lg transition-all duration-300;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0); /* Optimisation pour les animations */
+}
+
+/* Effet de brillance au survol pour tous les boutons */
+button::after,
+.btn::after,
+[type="button"]::after,
+[type="submit"]::after,
+[type="reset"]::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 70%);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.5s, transform 0.5s;
+  pointer-events: none;
+}
+
+button:hover::after,
+.btn:hover::after,
+[type="button"]:hover::after,
+[type="submit"]:hover::after,
+[type="reset"]:hover::after {
+  opacity: 1;
+  transform: scale(1);
+  animation: pulse-light 2s infinite;
+}
+
+/* Effet d'ondulation au clic */
+button::before,
+.btn::before,
+[type="button"]::before,
+[type="submit"]::before,
+[type="reset"]::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  border-radius: 100%;
+  transform: scale(1, 1) translate(-50%, -50%);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+button:active::before,
+.btn:active::before,
+[type="button"]:active::before,
+[type="submit"]:active::before,
+[type="reset"]:active::before {
+  animation: ripple 0.6s ease-out;
+}
+
+/* Boutons primaires avec dégradés animés */
+.bg-indigo-600,
+.bg-blue-600,
+.bg-[#2A3B8C],
+.bg-[#4F46E5] {
+  background-image: var(--tutoreel-gradient-primary) !important;
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  @apply shadow-md;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.bg-indigo-600:hover,
+.bg-blue-600:hover,
+.bg-[#2A3B8C]:hover,
+.bg-[#4F46E5]:hover {
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+  @apply shadow-lg;
+}
+
+/* Boutons secondaires */
+.bg-white.text-indigo-600,
+.bg-white.text-blue-600,
+.bg-white.text-[#2A3B8C],
+.bg-white.text-[#4F46E5] {
+  @apply border border-indigo-200 shadow-sm;
+  transition: all 0.3s ease, border-color 0.5s ease, transform 0.2s ease;
+}
+
+.bg-white.text-indigo-600:hover,
+.bg-white.text-blue-600:hover,
+.bg-white.text-[#2A3B8C]:hover,
+.bg-white.text-[#4F46E5]:hover {
+  @apply border-indigo-400 shadow-md;
+  transform: translateY(-2px);
+}
+
+/* Boutons d'accentuation */
+.bg-[#FFD700] {
+  background-image: var(--tutoreel-gradient-accent) !important;
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.bg-[#FFD700]:hover {
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+  @apply shadow-lg;
+}
+
+/* Boutons de succès */
+.bg-green-600,
+.bg-emerald-600,
+.bg-[#4CAF50] {
+  background-image: var(--tutoreel-gradient-success) !important;
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.bg-green-600:hover,
+.bg-emerald-600:hover,
+.bg-[#4CAF50]:hover {
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+  @apply shadow-lg;
+}
+
+/* Boutons d'avertissement */
+.bg-yellow-500,
+.bg-amber-500,
+.bg-[#F59E0B] {
+  background-image: var(--tutoreel-gradient-warning) !important;
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.bg-yellow-500:hover,
+.bg-amber-500:hover,
+.bg-[#F59E0B]:hover {
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+  @apply shadow-lg;
+}
+
+/* Boutons de danger */
+.bg-red-600,
+.bg-[#E53935],
+.bg-[#EF4444] {
+  background-image: var(--tutoreel-gradient-danger) !important;
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.bg-red-600:hover,
+.bg-[#E53935]:hover,
+.bg-[#EF4444]:hover {
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+  @apply shadow-lg;
+}
+
+/* ===== CARTES ET CONTENEURS ===== */
+
+/* Cartes de livre */
+.book-card {
+  @apply bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 transition-all duration-300;
+  transform: translateY(0);
+  position: relative;
+}
+
+/* Effet de brillance pour les cartes de livre */
+.book-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(120deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.6) 50%, rgba(255,255,255,0) 70%);
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.book-card:hover {
+  @apply shadow-md;
+  transform: translateY(-4px) scale(1.02);
+  border-color: rgba(79, 70, 229, 0.2);
+}
+
+.book-card:hover::after {
+  opacity: 1;
+  animation: card-shine 1.5s forwards;
+}
+
+/* Animation pour les images de couverture */
+.book-card img {
+  transition: all 0.5s ease;
+}
+
+.book-card:hover img {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+/* Conteneurs de contenu */
+.content-container,
+.bg-white {
+  @apply rounded-xl shadow-sm border border-gray-100 transition-all duration-300;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Effet de brillance pour les conteneurs */
+.content-container::after,
+.bg-white::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(120deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 70%);
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.content-container:hover,
+.bg-white:hover {
+  @apply shadow-md;
+  border-color: rgba(79, 70, 229, 0.1);
+  transform: translateY(-2px);
+}
+
+.content-container:hover::after,
+.bg-white:hover::after {
+  opacity: 1;
+  animation: card-shine 1.5s forwards;
+}
+
+/* ===== FORMULAIRES ===== */
+
+/* Champs de formulaire */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea,
+select {
+  @apply rounded-lg border border-gray-300 shadow-sm transition-all duration-300;
+  background-color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(4px);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Animation d'entrée pour les champs de formulaire */
+@keyframes input-focus-animation {
+  0% {
+    border-color: rgba(79, 70, 229, 0.3);
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.1);
+  }
+  50% {
+    border-color: rgba(79, 70, 229, 0.8);
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.2);
+  }
+  100% {
+    border-color: rgba(79, 70, 229, 0.6);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+  }
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+textarea:focus,
+select:focus {
+  @apply border-indigo-300 ring-indigo-100;
+  animation: input-focus-animation 0.5s ease forwards;
+  background-color: rgba(255, 255, 255, 1);
+  outline: none;
+}
+
+/* Effet de survol pour les champs de formulaire */
+input[type="text"]:hover,
+input[type="email"]:hover,
+input[type="password"]:hover,
+input[type="number"]:hover,
+input[type="search"]:hover,
+input[type="tel"]:hover,
+input[type="url"]:hover,
+textarea:hover,
+select:hover {
+  @apply border-gray-400;
+  transform: translateY(-1px);
+}
+
+/* ===== BADGES ET ÉTIQUETTES ===== */
+
+/* Badges */
+.badge,
+.availability-badge {
+  @apply rounded-full px-2 py-1 text-xs font-medium transition-all duration-300;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0);
+}
+
+/* Effet de pulsation pour les badges */
+.badge::after,
+.availability-badge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.2);
+  opacity: 0;
+  border-radius: inherit;
+}
+
+.badge:hover::after,
+.availability-badge:hover::after {
+  animation: badge-pulse 1.5s ease-in-out infinite;
+  opacity: 1;
+}
+
+@keyframes badge-pulse {
+  0% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0.2;
+    transform: scale(1);
+  }
+}
+
+/* Badges colorés avec dégradés */
+.badge-primary,
+.availability-badge-available {
+  background-image: var(--tutoreel-gradient-primary);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  @apply text-white;
+}
+
+.badge-success,
+.availability-badge-success {
+  background-image: var(--tutoreel-gradient-success);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  @apply text-white;
+}
+
+.badge-warning,
+.availability-badge-warning {
+  background-image: var(--tutoreel-gradient-warning);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  @apply text-white;
+}
+
+.badge-danger,
+.availability-badge-danger {
+  background-image: var(--tutoreel-gradient-danger);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  @apply text-white;
+}
+
+/* ===== FOOTER ===== */
+
+/* Footer */
+footer {
+  @apply bg-white shadow-inner border-t border-gray-200;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Effet de brillance subtil pour le footer */
+footer::after {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  width: 300%;
+  height: 300%;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.03) 0%, rgba(255, 255, 255, 0) 70%);
+  opacity: 0.5;
+  animation: footer-ambient 20s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes footer-ambient {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1) rotate(180deg);
+  }
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8) rotate(360deg);
+  }
+}
+
+/* Liens du footer */
+footer a {
+  @apply transition-all duration-300 relative;
+}
+
+footer a::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background-color: #4F46E5;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.3s ease;
+}
+
+footer a:hover {
+  @apply text-indigo-600;
+  transform: translateY(-1px);
+}
+
+footer a:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+/* ===== ANIMATIONS ET TRANSITIONS ===== */
+
+/* Animation de fondu */
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Animation de glissement vers le haut */
+.animate-slideInUp {
+  animation: slideInUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* Animation de pulsation */
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+
+/* Animation de déplacement subtil */
+.animate-subtle-shift {
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+}
+
+/* Animation de brillance */
+.animate-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.animate-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(120deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.6) 50%, rgba(255,255,255,0) 70%);
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  animation: card-shine 3s infinite;
+  pointer-events: none;
+}
+
+/* Animation de rebond */
+.animate-bounce-subtle {
+  animation: bounce-subtle 2s ease-in-out infinite;
+}
+
+@keyframes bounce-subtle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* Animation d'ondulation */
+.animate-wave {
+  animation: wave 2s ease-in-out infinite;
+}
+
+@keyframes wave {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(5deg);
+  }
+  75% {
+    transform: rotate(-5deg);
+  }
+}
+
+/* ===== EFFETS SPÉCIAUX ===== */
+
+/* Effet de verre dépoli */
+.glass-effect {
+  @apply bg-white/95 backdrop-blur-md;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.glass-effect:hover {
+  @apply bg-white/98;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.glass-effect-dark {
+  @apply backdrop-blur-md;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.glass-effect-dark:hover {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Effet de dégradé pour les en-têtes */
+.gradient-header {
+  @apply rounded-2xl p-8 text-white mb-8 shadow-xl;
+  background-image: var(--tutoreel-gradient-primary);
+  background-size: 300% 300%;
+  animation: subtle-shift 15s ease infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.gradient-header::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
+  opacity: 0.5;
+  animation: header-glow 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Effet de bordure animée */
+.border-animated {
+  position: relative;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.border-animated::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, #4F46E5, #2563EB, #10B981, #F59E0B, #EF4444, #4F46E5);
+  background-size: 400% 400%;
+  animation: border-animation 6s linear infinite;
+  z-index: -1;
+  border-radius: inherit;
+}
+
+@keyframes border-animation {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Animation pour le header */
+@keyframes header-ambient {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1) rotate(180deg);
+  }
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8) rotate(360deg);
+  }
+}

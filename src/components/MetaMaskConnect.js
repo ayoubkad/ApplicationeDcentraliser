@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, AlertCircle, LogOut, Check, RefreshCw, ExternalLink, Copy, BookOpen } from 'lucide-react';
+import { Wallet, AlertCircle, LogOut, Check, RefreshCw, ExternalLink, Copy } from 'lucide-react';
 
 const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3Service }) => {
   const [account, setAccount] = useState(initialAccount);
@@ -230,7 +230,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
               onClick={connectToMetaMask}
               disabled={isLoading}
               className={`flex items-center px-4 py-2 rounded-md font-medium transition ${
-                isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-700 text-white hover:bg-blue-800'
+                isLoading ? 'bg-gray-400 cursor-not-allowed' : 'tutoreel-btn-primary'
               }`}
               aria-label="Connect to MetaMask"
               aria-disabled={isLoading}
@@ -240,7 +240,7 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
               ) : (
                 <Wallet size={18} className="mr-2" aria-hidden="true" />
               )}
-              {isLoading ? 'Connexion...' : 'Connect Wallet'}
+              {isLoading ? 'Connexion...' : 'Connecter'}
             </button>
           ) : (
             <div className="flex items-center text-red-600">
@@ -266,9 +266,9 @@ const MetaMaskConnect = ({ onConnect, onDisconnect, initialAccount = null, web3S
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center">
-                  <span className="font-medium" title={account}>
+                  <span className="tutoreel-address" title={account}>
                     {formatAddress(account)}
-                  </span>
+                </span>
                   <button
                     onClick={copyToClipboard}
                     className="ml-2 p-1 hover:bg-indigo-800 rounded-md"

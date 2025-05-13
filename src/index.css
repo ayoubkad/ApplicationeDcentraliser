@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Open+Sans:wght@400;500;600;700&display=swap');
+@import './styles/tutoreel-design.css';
+@import './styles/tutoreel-application.css';
 
 body {
   margin: 0;

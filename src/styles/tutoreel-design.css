@@ -1,0 +1,570 @@
+/* tutoreel-design.css - Styles inspirés du design Tutoreel pour toute l'application */
+/* Ce fichier applique les styles du Tutoreel à l'ensemble de l'application sans modifier sa structure */
+
+/* ===== VARIABLES GLOBALES ===== */
+:root {
+  /* Couleurs principales */
+  --tutoreel-primary: #4F46E5; /* indigo-600 */
+  --tutoreel-primary-dark: #4338CA; /* indigo-700 */
+  --tutoreel-primary-light: #E0E7FF; /* indigo-50 */
+
+  /* Couleurs secondaires */
+  --tutoreel-secondary: #3B82F6; /* blue-500 */
+  --tutoreel-secondary-dark: #2563EB; /* blue-600 */
+  --tutoreel-secondary-light: #EFF6FF; /* blue-50 */
+
+  /* Couleurs d'accentuation */
+  --tutoreel-accent: #3B5FE9; /* inscription-blue */
+  --tutoreel-accent-dark: #2A4CD6;
+  --tutoreel-accent-light: #5C7BF0;
+
+  /* Couleurs fonctionnelles */
+  --tutoreel-success: #10B981; /* emerald-500 */
+  --tutoreel-success-light: #ECFDF5; /* emerald-50 */
+  --tutoreel-warning: #F59E0B; /* amber-500 */
+  --tutoreel-warning-light: #FFFBEB; /* amber-50 */
+  --tutoreel-danger: #EF4444; /* red-500 */
+  --tutoreel-danger-light: #FEF2F2; /* red-50 */
+
+  /* Effets et transitions */
+  --tutoreel-transition-fast: 150ms;
+  --tutoreel-transition-normal: 300ms;
+  --tutoreel-transition-slow: 500ms;
+  --tutoreel-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --tutoreel-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --tutoreel-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --tutoreel-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Dégradés animés */
+  --tutoreel-gradient-primary: linear-gradient(135deg, #4F46E5, #4338CA, #6366F1, #4F46E5);
+  --tutoreel-gradient-secondary: linear-gradient(135deg, #3B82F6, #2563EB, #60A5FA, #3B82F6);
+  --tutoreel-gradient-accent: linear-gradient(135deg, #3B5FE9, #2A4CD6, #5C7BF0, #3B5FE9);
+  --tutoreel-gradient-success: linear-gradient(135deg, #10B981, #059669, #34D399, #10B981);
+  --tutoreel-gradient-warning: linear-gradient(135deg, #F59E0B, #D97706, #FBBF24, #F59E0B);
+  --tutoreel-gradient-danger: linear-gradient(135deg, #EF4444, #DC2626, #F87171, #EF4444);
+}
+
+/* ===== STYLES DE BOUTONS ===== */
+
+/* Style de base pour tous les boutons */
+.tutoreel-btn {
+  @apply rounded-lg font-medium transition-all duration-300 flex items-center justify-center;
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0); /* Optimisation pour les animations */
+}
+
+/* Effet de brillance au survol */
+.tutoreel-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 70%);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.5s, transform 0.5s;
+  pointer-events: none;
+}
+
+.tutoreel-btn:hover::after {
+  opacity: 1;
+  transform: scale(1);
+  animation: pulse-light 2s infinite;
+}
+
+/* Effet d'ondulation au clic */
+.tutoreel-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  border-radius: 100%;
+  transform: scale(1, 1) translate(-50%, -50%);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+.tutoreel-btn:active::before {
+  animation: ripple 0.6s ease-out;
+}
+
+/* Variantes de boutons avec dégradés animés */
+.tutoreel-btn-primary {
+  @apply text-white shadow-sm;
+  background-color: var(--tutoreel-accent);
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.tutoreel-btn-primary:hover {
+  @apply shadow-md;
+  background-color: var(--tutoreel-accent-dark);
+  transform: translateY(-2px);
+}
+
+.tutoreel-btn-primary:active {
+  transform: translateY(1px);
+  background-color: var(--tutoreel-accent-dark);
+}
+
+.tutoreel-btn-secondary {
+  @apply bg-white text-indigo-600 border border-indigo-200 shadow-sm;
+  transition: all 0.3s ease, border-color 0.5s ease, transform 0.2s ease;
+}
+
+.tutoreel-btn-secondary:hover {
+  @apply shadow-md border-indigo-400;
+  transform: translateY(-2px);
+}
+
+.tutoreel-btn-secondary:active {
+  transform: translateY(1px);
+}
+
+.tutoreel-btn-accent {
+  @apply text-indigo-900 shadow-sm;
+  background-image: var(--tutoreel-gradient-accent);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.tutoreel-btn-accent:hover {
+  @apply shadow-md;
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+}
+
+.tutoreel-btn-accent:active {
+  transform: translateY(1px);
+}
+
+.tutoreel-btn-success {
+  @apply text-white shadow-sm;
+  background-image: var(--tutoreel-gradient-success);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.tutoreel-btn-success:hover {
+  @apply shadow-md;
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+}
+
+.tutoreel-btn-warning {
+  @apply text-white shadow-sm;
+  background-image: var(--tutoreel-gradient-warning);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.tutoreel-btn-warning:hover {
+  @apply shadow-md;
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+}
+
+.tutoreel-btn-danger {
+  @apply text-white shadow-sm;
+  background-image: var(--tutoreel-gradient-danger);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite;
+  transition: all 0.3s ease, transform 0.2s ease;
+}
+
+.tutoreel-btn-danger:hover {
+  @apply shadow-md;
+  animation: subtle-shift 3s ease infinite;
+  transform: translateY(-2px);
+}
+
+.tutoreel-btn-outline {
+  @apply bg-transparent border border-indigo-300 text-indigo-600;
+  transition: all 0.3s ease, border-color 0.5s ease, transform 0.2s ease;
+  background-position: 0 0;
+  background-size: 200% 200%;
+}
+
+.tutoreel-btn-outline:hover {
+  @apply border-indigo-500 bg-indigo-50;
+  transform: translateY(-2px);
+  background-position: 100% 100%;
+}
+
+.tutoreel-btn-outline:active {
+  transform: translateY(1px);
+}
+
+.tutoreel-btn-ghost {
+  @apply bg-white/20 text-white font-medium;
+  transition: all 0.3s ease, transform 0.2s ease;
+  backdrop-filter: blur(4px);
+}
+
+.tutoreel-btn-ghost:hover {
+  @apply bg-white/30;
+  transform: translateY(-2px);
+}
+
+.tutoreel-btn-ghost:active {
+  transform: translateY(1px);
+}
+
+/* Tailles de boutons */
+.tutoreel-btn-sm {
+  @apply px-3 py-1.5 text-sm;
+}
+
+.tutoreel-btn-md {
+  @apply px-4 py-2;
+}
+
+.tutoreel-btn-lg {
+  @apply px-6 py-3 text-lg;
+}
+
+/* Bouton avec icône */
+.tutoreel-btn-icon {
+  @apply inline-flex items-center;
+}
+
+.tutoreel-btn-icon svg,
+.tutoreel-btn-icon img {
+  @apply mr-2;
+}
+
+/* Bouton désactivé */
+.tutoreel-btn-disabled {
+  @apply opacity-70 cursor-not-allowed;
+}
+
+/* ===== STYLES DE NOTIFICATIONS ===== */
+
+.tutoreel-notification {
+  @apply fixed bottom-4 right-4 z-50 max-w-md rounded-lg shadow-xl;
+  animation: notification-entrance 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  backdrop-filter: blur(8px);
+  transform-origin: bottom right;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.tutoreel-notification-content {
+  @apply px-4 py-3 flex items-center;
+  border-radius: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Effet de brillance animé pour les notifications */
+.tutoreel-notification-content::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 70%);
+  opacity: 0;
+  animation: notification-glow 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.tutoreel-notification-icon {
+  @apply mr-3 flex-shrink-0;
+  animation: notification-icon-pulse 2s ease-in-out infinite;
+}
+
+.tutoreel-notification-close {
+  @apply ml-4 p-1 rounded-full transition-all duration-300;
+  transform: scale(1);
+}
+
+.tutoreel-notification-close:hover {
+  @apply bg-white/20;
+  transform: scale(1.1) rotate(90deg);
+}
+
+/* Variantes de notifications avec dégradés animés */
+.tutoreel-notification-info {
+  background-image: var(--tutoreel-gradient-secondary);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite, notification-entrance 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  @apply text-white;
+}
+
+.tutoreel-notification-success {
+  background-image: var(--tutoreel-gradient-success);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite, notification-entrance 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  @apply text-white;
+}
+
+.tutoreel-notification-warning {
+  background-image: var(--tutoreel-gradient-warning);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite, notification-entrance 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  @apply text-white;
+}
+
+.tutoreel-notification-error {
+  background-image: var(--tutoreel-gradient-danger);
+  background-size: 300% 300%;
+  animation: subtle-shift 8s ease infinite, notification-entrance 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  @apply text-white;
+}
+
+/* Animations pour les notifications */
+@keyframes notification-entrance {
+  0% {
+    transform: translateY(20px) scale(0.8);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(-5px) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes notification-glow {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1) rotate(180deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8) rotate(360deg);
+  }
+}
+
+@keyframes notification-icon-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ===== STYLES GÉNÉRAUX ===== */
+
+/* Style pour les adresses Ethereum */
+.tutoreel-address {
+  @apply font-mono text-sm px-3 py-1.5 rounded-md border shadow-sm bg-indigo-800/70 text-white border-indigo-600;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.025em;
+}
+
+/* Style pour les adresses Ethereum en mode compact */
+.tutoreel-address-compact {
+  @apply font-mono text-xs px-2 py-1 rounded-md border bg-indigo-800/70 text-white border-indigo-600;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.025em;
+}
+
+.tutoreel-address:hover {
+  @apply bg-indigo-700 border-indigo-500 shadow-md;
+  transform: translateY(-1px);
+}
+
+.tutoreel-address-icon {
+  @apply mr-1 text-indigo-200 p-0.5 rounded-full;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tutoreel-address-connected {
+  @apply bg-green-800/70 text-white border-green-600;
+}
+
+.tutoreel-address-connected:hover {
+  @apply bg-green-700 border-green-500;
+}
+
+.tutoreel-address-pending {
+  @apply bg-yellow-700/70 text-white border-yellow-600;
+}
+
+.tutoreel-address-pending:hover {
+  @apply bg-yellow-600 border-yellow-500;
+}
+
+/* Effet de verre dépoli */
+.tutoreel-glass {
+  @apply bg-white/95 backdrop-blur-md;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.tutoreel-glass:hover {
+  @apply bg-white/98;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Cartes avec effet de survol */
+.tutoreel-card {
+  @apply bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 transition-all duration-300;
+  transform: translateY(0);
+  position: relative;
+}
+
+.tutoreel-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(120deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.6) 50%, rgba(255,255,255,0) 70%);
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.tutoreel-card:hover {
+  @apply shadow-md;
+  transform: translateY(-2px);
+}
+
+.tutoreel-card:hover::after {
+  opacity: 1;
+  animation: card-shine 1.5s forwards;
+}
+
+/* En-têtes avec dégradé */
+.tutoreel-gradient-header {
+  @apply rounded-2xl p-8 text-white mb-8 shadow-xl;
+  background-image: var(--tutoreel-gradient-primary);
+  background-size: 300% 300%;
+  animation: subtle-shift 15s ease infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Classe pour le dégradé du hero */
+.tutoreel-hero-gradient {
+  background-image: var(--tutoreel-gradient-primary);
+  background-size: 300% 300%;
+  animation: subtle-shift 15s ease infinite;
+  position: relative;
+  overflow: hidden;
+  color: white;
+}
+
+.tutoreel-gradient-header::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
+  opacity: 0.5;
+  animation: header-glow 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ===== ANIMATIONS GLOBALES ===== */
+
+/* Animation de déplacement subtil pour les dégradés */
+@keyframes subtle-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Animation d'ondulation pour les boutons */
+@keyframes ripple {
+  0% {
+    opacity: 0.5;
+    transform: scale(0, 0) translate(-50%, -50%);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(20, 20) translate(-50%, -50%);
+  }
+}
+
+/* Animation de pulsation légère */
+@keyframes pulse-light {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+}
+
+/* Animation de brillance pour les cartes */
+@keyframes card-shine {
+  0% {
+    background-position: -100% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Animation de brillance pour les en-têtes */
+@keyframes header-glow {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.8) rotate(0deg);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1) rotate(180deg);
+  }
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8) rotate(360deg);
+  }
+}

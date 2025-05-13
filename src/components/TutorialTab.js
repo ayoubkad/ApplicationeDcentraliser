@@ -36,7 +36,7 @@ const TutorialSection = ({
   const isExpanded = expandedSection === id;
 
   return (
-    <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+    <div className="mb-4 tutoreel-card overflow-hidden">
       <button
         onClick={() => setExpandedSection(isExpanded ? null : id)}
         className={`w-full p-5 flex justify-between items-center transition-colors duration-300 ${
@@ -82,8 +82,8 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
-      {/* En-tête avec gradient amélioré */}
-      <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-800 text-white rounded-2xl p-8 mb-8 shadow-xl">
+      {/* En-tête avec tutoreel-gradient-header */}
+      <div className="tutoreel-gradient-header p-8 mb-8 rounded-2xl">
         <div className="max-w-2xl mx-auto">
           <h1 className="text-4xl font-bold mb-4">Guide BiblioChain</h1>
           <p className="text-lg opacity-90 mb-6">
@@ -92,7 +92,7 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => setActiveTab('catalog')}
-              className="bg-white/15 hover:bg-white/25 px-5 py-3 rounded-xl font-medium flex items-center transition-all duration-300 backdrop-blur-sm"
+              className="tutoreel-btn tutoreel-btn-ghost tutoreel-btn-lg"
             >
               <BookmarkIcon size={18} className="mr-2" />
               Explorer le catalogue
@@ -119,10 +119,10 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
       <div className="mb-6 flex justify-end">
         <button
           onClick={() => setQuickStart(!quickStart)}
-          className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-300 ${
+          className={`tutoreel-btn tutoreel-btn-sm flex items-center ${
             quickStart
-              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              ? 'tutoreel-btn-primary'
+              : 'tutoreel-btn-outline'
           }`}
         >
           <RotateCw size={16} className="mr-2" />
@@ -152,7 +152,7 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
                 </InfoBox>
 
                 {quickStart ? (
-                  <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                  <div className="p-4 tutoreel-glass rounded-lg">
                     <h4 className="font-medium text-indigo-800 mb-2">Guide rapide</h4>
                     <ol className="space-y-2 ml-5 list-decimal text-indigo-700">
                       <li>Installez MetaMask et créez un portefeuille</li>
@@ -163,7 +163,7 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
                   </div>
                 ) : (
                   <div className="grid md:grid-cols-2 gap-4">
-                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
+                    <div className="p-4 tutoreel-glass rounded-xl">
                       <h4 className="font-semibold text-gray-800 mb-3">Sans connexion</h4>
                       <ul className="space-y-2 text-gray-600">
                         <li className="flex items-center">
@@ -177,7 +177,7 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
                       </ul>
                     </div>
 
-                    <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 shadow-sm">
+                    <div className="p-4 tutoreel-glass rounded-xl bg-indigo-50/50">
                       <h4 className="font-semibold text-indigo-800 mb-3">Avec connexion</h4>
                       <ul className="space-y-2 text-indigo-700">
                         <li className="flex items-center">
@@ -222,7 +222,7 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
 
                 <button
                   onClick={connectToMetaMask}
-                  className="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 p-4 rounded-lg flex items-center justify-center transition-colors"
+                  className="w-full tutoreel-btn tutoreel-btn-secondary tutoreel-btn-lg flex items-center justify-center"
                 >
                   <Wallet size={20} className="mr-2" />
                   <span>Connecter avec MetaMask</span>
@@ -289,7 +289,7 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
 
                     <button
                       onClick={() => setActiveTab('login')}
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-lg flex items-center justify-center transition-colors"
+                      className="w-full tutoreel-btn tutoreel-btn-primary tutoreel-btn-lg flex items-center justify-center"
                     >
                       <UserPlus size={20} className="mr-2" />
                       <span>Aller à la page d'inscription</span>
@@ -354,7 +354,7 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
 
                 <button
                   onClick={() => setActiveTab('catalog')}
-                  className="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 p-4 rounded-lg flex items-center justify-center transition-colors"
+                  className="w-full tutoreel-btn tutoreel-btn-secondary tutoreel-btn-lg flex items-center justify-center"
                 >
                   <BookmarkIcon size={20} className="mr-2" />
                   <span>Explorer le catalogue</span>
@@ -366,12 +366,12 @@ const TutorialTab = ({ setActiveTab, isConnected, connectToMetaMask }) => {
       </div>
 
       {/* CTA final amélioré */}
-      <div className="mt-12 text-center bg-gradient-to-b from-white to-indigo-50 p-8 rounded-2xl">
+      <div className="mt-12 text-center tutoreel-glass p-8 rounded-2xl">
         <p className="text-gray-600 mb-5">Prêt à commencer votre voyage ?</p>
         <div className="flex justify-center gap-3">
           <button
             onClick={() => setActiveTab('catalog')}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-medium flex items-center transition-all shadow-md hover:shadow-lg"
+            className="tutoreel-btn tutoreel-btn-primary tutoreel-btn-lg"
           >
             <BookOpen size={20} className="mr-2" />
             Découvrir les livres

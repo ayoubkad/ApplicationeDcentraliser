@@ -1566,7 +1566,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <span className="font-mono">
+                        <span className="tutoreel-address">
                           {formatAddress(user.address)}
                         </span>
                       </td>

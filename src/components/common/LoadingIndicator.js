@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
 
+/**
+ * Composant LoadingIndicator amélioré avec le design Tutoreel
+ * Affiche un indicateur de chargement avec une barre de progression
+ *
+ * @param {Object} props - Les propriétés du composant
+ * @param {number} props.timeout - Délai en millisecondes avant que l'indicateur ne se cache automatiquement
+ * @returns {JSX.Element|null} - Le composant LoadingIndicator ou null si caché
+ */
 const LoadingIndicator = ({ timeout = 30000 }) => {
   const [visible, setVisible] = useState(true);
   const [timeElapsed, setTimeElapsed] = useState(0);
@@ -28,33 +36,33 @@ const LoadingIndicator = ({ timeout = 30000 }) => {
   const progressPercent = Math.min((timeElapsed / timeout) * 100, 100);
 
   return (
-    <div className="fixed inset-0 bg-black/20 flex flex-col items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-4 shadow-lg flex flex-col items-center">
-        <div className="flex items-center mb-2">
-          <div className="w-5 h-5 border-2 border-[#2A3B8C] border-t-transparent rounded-full animate-spin mr-3"></div>
-          <span>Chargement en cours...</span>
+    <div className="fixed inset-0 bg-black/20 flex flex-col items-center justify-center z-50 backdrop-blur-sm">
+      <div className="tutoreel-glass rounded-xl p-6 shadow-xl flex flex-col items-center animate-fadeIn">
+        <div className="flex items-center mb-3">
+          <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-3"></div>
+          <span className="text-gray-800 font-medium">Chargement en cours...</span>
         </div>
-        
+
         {/* Barre de progression */}
-        <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
-          <div 
-            className="bg-[#2A3B8C] h-1.5 rounded-full transition-all duration-300" 
+        <div className="w-full bg-gray-200 rounded-full h-2 mt-3 overflow-hidden">
+          <div
+            className="bg-gradient-to-r from-indigo-500 to-indigo-700 h-2 rounded-full transition-all duration-300"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        
+
         {/* Message si le chargement prend du temps */}
         {timeElapsed > 10000 && (
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-gray-600 mt-3 animate-fadeIn">
             Le chargement prend plus de temps que prévu...
           </p>
         )}
-        
+
         {/* Bouton pour forcer la fermeture */}
         {timeElapsed > 15000 && (
-          <button 
+          <button
             onClick={() => setVisible(false)}
-            className="mt-3 text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded"
+            className="tutoreel-btn tutoreel-btn-outline mt-4 text-xs px-4 py-2 focus-ring animate-fadeIn"
           >
             Fermer
           </button>
@@ -64,4 +72,4 @@ const LoadingIndicator = ({ timeout = 30000 }) => {
   );
 };
 
-export default LoadingIndicator; 
+export default LoadingIndicator;
