@@ -16,8 +16,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
 
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x62056cC3Fc72feb082B82f7E16778608324a2DE7', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x62056cC3Fc72feb082B82f7E16778608324a2DE7'  // Ganache - Adresse déployée
+      1337: '0xdAe919dC7fe4a27395C7667099b813ccF0336a53', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0xdAe919dC7fe4a27395C7667099b813ccF0336a53'  // Ganache - Adresse déployée
     };
 
     // Cache local des utilisateurs inscrits
@@ -28,7 +28,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
 
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x62056cC3Fc72feb082B82f7E16778608324a2DE7';
+    this.contractAddress = '0xdAe919dC7fe4a27395C7667099b813ccF0336a53';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -59,13 +59,13 @@ class Web3Service {
       // Local Networks
       1337: {
         name: 'Localhost 8545',
-        explorerUrl: '',
+        explorerUrl: 'http://localhost:3000/explorer',
         rpcUrl: 'http://127.0.0.1:7545',
         symbol: 'ETH'
       },
       5777: {
         name: 'Ganache',
-        explorerUrl: '',
+        explorerUrl: 'http://localhost:3000/explorer',
         rpcUrl: 'http://127.0.0.1:7545',
         symbol: 'ETH'
       }
@@ -208,7 +208,7 @@ class Web3Service {
               decimals: 18
             },
             rpcUrls: ['http://127.0.0.1:7545'],
-            blockExplorerUrls: []
+            blockExplorerUrls: ['http://localhost:3000/explorer']
           }
         ]
       });

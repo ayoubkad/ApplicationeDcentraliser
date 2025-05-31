@@ -17,6 +17,7 @@ import LoadingIndicator from './components/common/LoadingIndicator';
 import LoginTab from './components/LoginTab';
 import TransactionsAdmin from './components/TransactionsAdmin';
 import TutorialTab from './components/TutorialTab';
+import ExplorerTab from './components/explorer/ExplorerTab';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
@@ -855,6 +856,7 @@ const App = () => {
           connectToMetaMask={connectToMetaMask}
         />}
         {activeTab === 'transactions' && <TransactionsAdmin />}
+        {activeTab === 'explorer' && <ExplorerTab />}
       </main>
 
       <Footer setActiveTab={handleTabChange} isAdmin={isAdmin} />
