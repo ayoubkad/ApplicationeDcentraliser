@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut, History, HelpCircle } from 'lucide-react';
+import { BookOpen, Menu, X, RefreshCw, AlertCircle, User, Home, BookmarkIcon, LayoutDashboard, Settings, LogOut, History, HelpCircle, Database } from 'lucide-react';
 import web3Service from '../services/Web3Service';
 
 const Header = ({ activeTab, setActiveTab, account, isConnected, isRegistered, connectToMetaMask, refreshConnection, disconnectWallet, showNotification, userReputation, isAdmin }) => {
@@ -141,6 +141,15 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
               </>
             )}
 
+            {/* Bouton Explorateur Blockchain - visible pour tous */}
+            <button
+              onClick={() => setActiveTab('explorer')}
+              className={`flex items-center px-4 py-2 rounded-md transition ${activeTab === 'explorer' ? 'bg-blue-100 text-[#2A3B8C] font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              <Database size={18} className="mr-1" />
+              <span>Explorateur</span>
+            </button>
+
             {/* Bouton Tutoriel - visible seulement pour les non-admins */}
             {!isAdmin && (
               <button
@@ -240,6 +249,19 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                         )}
 
                         <hr className="my-1" />
+                        {/* Lien vers l'explorateur blockchain - visible pour tous */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab('explorer');
+                            setShowAccountMenu(false);
+                          }}
+                          className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <Database size={16} className="inline mr-2 text-blue-600" />
+                          Explorateur Blockchain
+                        </button>
+                        
                         {/* Lien vers le tutoriel - visible seulement pour les non-admins */}
                         {!isAdmin && (
                           <button
@@ -369,6 +391,17 @@ Inscrit: ${isRegistered ? 'Oui' : 'Non'}`);
                   <LayoutDashboard size={18} className="mr-2" /> Mon Espace
                 </button>
               )}
+
+              {/* Bouton Explorateur Blockchain - visible pour tous */}
+              <button
+                onClick={() => {
+                  setActiveTab('explorer');
+                  setMobileMenuOpen(false);
+                }}
+                className={`flex items-center w-full px-3 py-2 rounded-md ${activeTab === 'explorer' ? 'bg-blue-100 text-[#2A3B8C]' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                <Database size={18} className="mr-2" /> Explorateur
+              </button>
 
               {/* Bouton Tutoriel - visible seulement pour les non-admins */}
               {!isAdmin && (
