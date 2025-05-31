@@ -93,11 +93,6 @@ ou
 ```
 truffle test
 ```
-
-## Licence
-
-Ce projet est sous licence FST ERRACHIDIA.
-
 ## Contact
 
 Pour toute question ou suggestion, veuillez ouvrir une issue sur GitHub.
