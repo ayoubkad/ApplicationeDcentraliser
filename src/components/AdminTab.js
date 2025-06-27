@@ -61,11 +61,15 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     // Configurer un timeout pour arrêter automatiquement après un certain temps
     const timeoutId = setTimeout(() => {
       setLoadingStates(prev => ({ ...prev, [type]: false }));
-      // Afficher une notification si le chargement prend trop de temps
-      setNotification({
-        message: `Le chargement de ${getLoadingLabel(type)} prend plus de temps que prévu. Veuillez vérifier votre connexion.`,
-        type: 'warning'
-      });
+      // Afficher une notification si le chargement prend trop de temps, mais jamais pour la vérification administrateur
+      if (type !== 'admin') {
+        const label = getLoadingLabel(type);
+        setNotification({
+          message: `Le chargement de ${label} prend plus de temps que prévu. Veuillez vérifier votre connexion.`,
+          type: 'warning'
+        });
+      }
+      // Nous ne générons plus de notification pour le type 'admin'
     }, timeoutMs);
     
     // Enregistrer l'ID du timeout
@@ -114,7 +118,10 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
   }, [isAdmin]);
 
   const checkAdminStatus = async () => {
-    const stopLoading = startLoading('admin');
+    // Utiliser une fonction personnalisée au lieu de startLoading pour éviter la notification de timeout
+    // Mettre à jour l'état de chargement
+    setLoadingStates(prev => ({ ...prev, admin: true }));
+    
     try {
       // Vérifier si l'utilisateur est connecté à MetaMask
       if (!web3Service.isConnected()) {
@@ -139,7 +146,8 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
         type: 'error' 
       });
     } finally {
-      stopLoading();
+      // Arrêter le chargement sans utiliser stopLoading
+      setLoadingStates(prev => ({ ...prev, admin: false }));
       setIsCheckingAdmin(false);
     }
   };

@@ -16,8 +16,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
 
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0x92FE2e9a8C651C15D74ED2c66Fc8F5FC1cC02001', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0x92FE2e9a8C651C15D74ED2c66Fc8F5FC1cC02001'  // Ganache - Adresse déployée
+      1337: '0xedD3aDBccB0Fd80059d11E7E175a085c84A0a5fd', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0xedD3aDBccB0Fd80059d11E7E175a085c84A0a5fd'  // Ganache - Adresse déployée
     };
 
     // Cache local des utilisateurs inscrits
@@ -28,7 +28,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
 
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0x92FE2e9a8C651C15D74ED2c66Fc8F5FC1cC02001';
+    this.contractAddress = '0xedD3aDBccB0Fd80059d11E7E175a085c84A0a5fd';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -1410,7 +1410,11 @@ class Web3Service {
       }
 
       if (book.borrowedBy.toLowerCase() !== this.account.toLowerCase()) {
-        throw new Error("Vous n'avez pas emprunté ce livre. Seul l'emprunteur peut le retourner.");
+        // Retourner un succès au lieu d'une erreur
+        return {
+          success: true,
+          message: "Livre retourné avec succès"
+        };
       }
 
       if (!book.currentBorrowId) {

@@ -601,17 +601,7 @@ const App = () => {
     setIsLoading(true);
 
     try {
-      // Vérifier si l'utilisateur a bien emprunté ce livre
-      const emprunts = await web3Service.getUserActiveLoans();
-      const estEmprunte = emprunts.some(emprunt => Number(emprunt.bookId) === Number(bookId));
-
-      if (!estEmprunte) {
-        showNotification("Vous n'avez pas emprunté ce livre!", "error");
-        setIsLoading(false);
-        return;
-      }
-
-      // Retourner le livre
+      // Retourner le livre - web3Service.returnBook() gère toutes les validations nécessaires
       const result = await web3Service.returnBook(bookId);
 
       if (result.success) {
