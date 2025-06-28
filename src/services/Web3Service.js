@@ -16,8 +16,8 @@ class Web3Service {
       11155111: '', // Sepolia Testnet
 
       // Réseaux de développement - Vérifiez que ces adresses correspondent à votre déploiement local
-      1337: '0xedD3aDBccB0Fd80059d11E7E175a085c84A0a5fd', // Localhost 8545 (Ganache) - Adresse déployée
-      5777: '0xedD3aDBccB0Fd80059d11E7E175a085c84A0a5fd'  // Ganache - Adresse déployée
+      1337: '0xC611ecb7D4C8a0f35089f93930cd7f7c54921085', // Localhost 8545 (Ganache) - Adresse déployée
+      5777: '0xC611ecb7D4C8a0f35089f93930cd7f7c54921085'  // Ganache - Adresse déployée
     };
 
     // Cache local des utilisateurs inscrits
@@ -28,7 +28,7 @@ class Web3Service {
     this.defaultGasPrice = 20000000000; // Prix du gas par défaut (20 Gwei)
 
     // Adresse par défaut pour le développement local
-    this.contractAddress = '0xedD3aDBccB0Fd80059d11E7E175a085c84A0a5fd';
+    this.contractAddress = '0xC611ecb7D4C8a0f35089f93930cd7f7c54921085';
     this.initialized = false;
     this.isGanache = false;
     this.ganacheUrl = 'http://127.0.0.1:7545';
@@ -1209,8 +1209,16 @@ class Web3Service {
             const ipfsService = await import('./IPFSService').then(module => module.default);
             console.log(`Tentative de récupération des métadonnées IPFS pour le hash: ${book.ipfsHash}`);
 
-            // Récupérer les métadonnées du livre depuis IPFS
-            const ipfsMetadata = await ipfsService.getBookMetadata(book.ipfsHash);
+            // Récupérer les métadonnées du livre depuis IPFS avec timeout
+            const ipfsMetadata = await Promise.race([
+              ipfsService.getBookMetadata(book.ipfsHash),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Timeout métadonnées IPFS")), 5000)
+              )
+            ]).catch(error => {
+              console.warn(`Timeout ou erreur métadonnées IPFS: ${error.message}`);
+              return null;
+            });
 
             if (ipfsMetadata) {
               console.log(`Métadonnées IPFS récupérées avec succès pour le livre ${bookId}`);
@@ -1222,16 +1230,25 @@ class Web3Service {
               book.pageCount = ipfsMetadata.pageCount || '';
               book.publishedDate = ipfsMetadata.publishedDate || '';
               book.coverImageHash = ipfsMetadata.coverImageHash || book.ipfsHash;
-              book.pdfHash = ipfsMetadata.pdfHash || book.ipfsHash;  // Utiliser l'ipfsHash comme fallback pour le PDF
+              book.pdfHash = ipfsMetadata.pdfHash || book.ipfsHash;
+
+              // Pré-charger l'URL de l'image en arrière-plan pour optimiser l'affichage
+              if (book.coverImageHash) {
+                ipfsService.generateIPFSImageUrl(book.coverImageHash).catch(error => {
+                  console.warn(`Erreur pré-chargement image pour livre ${bookId}:`, error);
+                });
+              }
             } else {
               // Si les métadonnées ne sont pas récupérables, utiliser l'ipfsHash comme pdfHash par défaut
               console.log(`Métadonnées IPFS non disponibles, utilisation de l'ipfsHash comme pdfHash pour le livre ${bookId}`);
               book.pdfHash = book.ipfsHash;
+              book.coverImageHash = book.ipfsHash; // Utiliser comme hash d'image de secours
             }
           } catch (ipfsError) {
             console.warn(`Erreur lors de la récupération des métadonnées IPFS: ${ipfsError.message}`);
             // En cas d'erreur, définir le pdfHash au ipfsHash pour permettre le téléchargement direct
             book.pdfHash = book.ipfsHash;
+            book.coverImageHash = book.ipfsHash; // Utiliser comme hash d'image de secours
           }
         }
 

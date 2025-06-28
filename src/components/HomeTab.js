@@ -71,7 +71,7 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
       // Filtrer pour obtenir les 4 livres les plus récents (les derniers dans l'array)
       const recent = allBooks.slice(-4).reverse();
 
-      // Formater les données pour l'affichage avec traitement des images IPFS
+      // Formater les données pour l'affichage avec traitement optimisé des images IPFS
       const formattedBooks = await Promise.all(recent.map(async book => {
         // Déterminer l'URL de l'image à partir du hash IPFS
         let imageUrl = "/assets/images/default-book.jpg";
@@ -81,13 +81,21 @@ const HomeTab = ({ setActiveTab, handleBorrowBook, isConnected, isRegistered, ac
 
         if (imageHash) {
           try {
-            // Générer l'URL de l'image à partir du hash IPFS
-            const ipfsUrl = await ipfsService.generateIPFSImageUrl(imageHash);
+            // Générer l'URL de l'image à partir du hash IPFS avec timeout
+            const ipfsUrl = await Promise.race([
+              ipfsService.generateIPFSImageUrl(imageHash),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Timeout image")), 3000)
+              )
+            ]);
+
             if (ipfsUrl) {
               imageUrl = ipfsUrl;
             }
           } catch (error) {
             console.warn(`Erreur lors de la génération de l'URL IPFS pour l'image du livre ${book.id}:`, error);
+            // Utiliser une image de fallback basée sur l'ID du livre
+            imageUrl = `https://picsum.photos/seed/${book.id}/300/200`;
           }
         }
 

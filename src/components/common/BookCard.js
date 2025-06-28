@@ -34,37 +34,49 @@ const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, is
 
   // Récupérer l'URL optimisée pour l'image dès le chargement du composant
   useEffect(() => {
+    let isMounted = true; // Pour éviter les mises à jour d'état sur un composant démonté
+
     const loadOptimizedImage = async () => {
       // Si on a un hash IPFS mais pas d'URL ou une URL qui ne fonctionne pas
       if (book.coverImageHash && (!book.coverImageUrl || imageState.error)) {
         try {
+          if (!isMounted) return;
           setImageState(prev => ({ ...prev, loading: true, error: false }));
-          // Utiliser la méthode optimisée pour obtenir l'URL IPFS
-          const optimizedUrl = await ipfsService.generateIPFSImageUrl(book.coverImageHash);
-          if (optimizedUrl) {
+
+          // Utiliser la méthode optimisée pour obtenir l'URL IPFS avec timeout
+          const optimizedUrl = await Promise.race([
+            ipfsService.generateIPFSImageUrl(book.coverImageHash),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Timeout")), 8000)
+            )
+          ]);
+
+          if (optimizedUrl && isMounted) {
             setImageState({
               loading: false,
               error: false,
               src: optimizedUrl
             });
-          } else {
+          } else if (isMounted) {
             throw new Error("Impossible de charger l'image");
           }
         } catch (error) {
           console.error("Erreur lors du chargement de l'image optimisée:", error);
-          setImageState({
-            loading: false,
-            error: true,
-            src: `https://picsum.photos/seed/${book.id}/300/200`
-          });
+          if (isMounted) {
+            setImageState({
+              loading: false,
+              error: true,
+              src: `https://picsum.photos/seed/${book.id}/300/200`
+            });
+          }
         }
-      } else if (book.coverImageUrl) {
+      } else if (book.coverImageUrl && isMounted) {
         setImageState({
           loading: false,
           error: false,
           src: book.coverImageUrl
         });
-      } else {
+      } else if (isMounted) {
         setImageState({
           loading: false,
           error: true,
@@ -74,38 +86,51 @@ const BookCard = ({ book, handleBorrowBook, showDetails = false, isConnected, is
     };
 
     loadOptimizedImage();
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
   }, [book.coverImageHash, book.coverImageUrl, book.id]);
 
-  // Gérer l'erreur de chargement d'image
+  // Gérer l'erreur de chargement d'image avec fallback intelligent
   const handleImageError = async (e) => {
     console.warn("Erreur de chargement de l'image IPFS, tentative avec alternative");
     e.target.onerror = null; // Éviter les boucles d'erreur
 
-    if (book.coverImageHash) {
+    if (book.coverImageHash && !imageState.src?.includes('picsum.photos')) {
       try {
+        // Nettoyer le cache pour ce hash et réessayer
+        ipfsService.imageUrlCache.delete(book.coverImageHash);
+
         // Dernière tentative avec un proxy CORS
         const corsProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://cloudflare-ipfs.com/ipfs/${book.coverImageHash}`)}`;
-        setImageState({
-          loading: false,
-          error: false,
-          src: corsProxy
-        });
+
+        // Tester rapidement si le proxy fonctionne
+        const testResponse = await fetch(corsProxy, {
+          method: 'HEAD',
+          timeout: 3000
+        }).catch(() => null);
+
+        if (testResponse && testResponse.ok) {
+          setImageState({
+            loading: false,
+            error: false,
+            src: corsProxy
+          });
+          return;
+        }
       } catch (error) {
-        // Fallback final
-        setImageState({
-          loading: false,
-          error: true,
-          src: `https://picsum.photos/seed/${book.id}/300/200`
-        });
+        console.warn("Échec du proxy CORS:", error);
       }
-    } else {
-      // Pas de hash, utiliser une image générique
-      setImageState({
-        loading: false,
-        error: true,
-        src: `https://picsum.photos/seed/${book.id}/300/200`
-      });
     }
+
+    // Fallback final avec image générique
+    setImageState({
+      loading: false,
+      error: true,
+      src: `https://picsum.photos/seed/${book.id}/300/200`
+    });
   };
 
   return (
