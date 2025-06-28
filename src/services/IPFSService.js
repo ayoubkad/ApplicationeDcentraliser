@@ -707,85 +707,69 @@ class IPFSService {
     return null;
   }
   
-  // Récupérer l'URL d'une image stockée sur IPFS avec contournement CORS
+  // Récupérer l'URL d'une image stockée sur IPFS avec contournement CORS (optimisée)
   async getIPFSImageUrl(ipfsHash) {
     if (!ipfsHash) return null;
-    
-    // Liste des passerelles à essayer pour les images
-    const imageGateways = [
-      // Nœud local en priorité
-      `${this.currentConfig.gateway}/ipfs/${ipfsHash}`,
-      // Services compatibles CORS pour les images
-      `https://nftstorage.link/ipfs/${ipfsHash}`,
-      `https://ipfs.infura-ipfs.io/ipfs/${ipfsHash}`,
-      `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`
-    ];
-    
-    // Fonction pour vérifier si une URL d'image est accessible
-    const checkImageUrl = async (url) => {
-      try {
-        const response = await axios.head(url, { 
-          timeout: 3000,
-          headers: { 'Cache-Control': 'no-cache' }
-        }).catch(() => null);
-        
-        return response && response.status === 200 && 
-               response.headers['content-type']?.includes('image');
-      } catch (error) {
-        return false;
-      }
-    };
-    
-    // Vérifier chaque passerelle et retourner la première qui fonctionne
-    for (const gateway of imageGateways) {
-      const isValid = await checkImageUrl(gateway);
-      if (isValid) {
-        this.log(`Image IPFS trouvée sur: ${gateway}`, 'info');
-        return gateway;
-      }
-    }
-    
-    // Contournement via proxy CORS pour les images
-    const corsProxyImageUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://cloudflare-ipfs.com/ipfs/${ipfsHash}`)}`;
-    const isProxyValid = await checkImageUrl(corsProxyImageUrl);
-    
-    if (isProxyValid) {
-      this.log(`Image IPFS trouvée via proxy CORS`, 'info');
-      return corsProxyImageUrl;
-    }
-    
-    // Si aucun moyen ne fonctionne, retourner une URL avec indication d'erreur
-    this.log(`Aucune passerelle IPFS ne répond pour l'image: ${ipfsHash}`, 'warn');
-    
-    // Fallback : utiliser une URL qui passera par le gestionnaire d'erreur du composant d'image
-    return `${this.currentConfig.gateway}/ipfs/${ipfsHash}`;
+
+    // Utiliser la nouvelle méthode optimisée
+    return await this.generateIPFSImageUrl(ipfsHash);
   }
 
-  // Nouvelle fonction améliorée pour générer les URLs d'images IPFS avec plusieurs passerelles
+  // Cache pour les URLs d'images IPFS qui fonctionnent
+  imageUrlCache = new Map();
+
+  // Cache pour les passerelles qui fonctionnent (priorisation intelligente)
+  workingGateways = [];
+
+  // Dernière vérification des passerelles
+  lastGatewayCheck = 0;
+
+  // Nouvelle fonction optimisée pour générer les URLs d'images IPFS
   async generateIPFSImageUrl(ipfsHash) {
     if (!ipfsHash) return null;
-    
-    // Liste de passerelles IPFS publiques pour les images
-    const imageGateways = [
-      `https://ipfs.io/ipfs/${ipfsHash}`,
-      `https://gateway.ipfs.io/ipfs/${ipfsHash}`,
-      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
-      `https://dweb.link/ipfs/${ipfsHash}`
+
+    // Vérifier le cache d'abord
+    if (this.imageUrlCache.has(ipfsHash)) {
+      const cachedUrl = this.imageUrlCache.get(ipfsHash);
+      this.log(`URL d'image récupérée depuis le cache: ${cachedUrl}`, 'info');
+      return cachedUrl;
+    }
+
+    // Liste de passerelles IPFS optimisée avec nœud local en priorité
+    const baseGateways = [
+      `${this.currentConfig.gateway}/ipfs/${ipfsHash}`, // Nœud local en priorité
+      `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,   // Rapide et fiable
+      `https://ipfs.io/ipfs/${ipfsHash}`,               // Officiel
+      `https://gateway.ipfs.io/ipfs/${ipfsHash}`,       // Backup officiel
+      `https://dweb.link/ipfs/${ipfsHash}`,             // Alternative
+      `https://nftstorage.link/ipfs/${ipfsHash}`,       // Spécialisé NFT/images
+      `https://gateway.pinata.cloud/ipfs/${ipfsHash}`   // Service commercial
     ];
-    
-    // Fonction pour vérifier si une URL est accessible
-    const checkImageUrl = async (url) => {
+
+    // Utiliser les passerelles qui ont fonctionné récemment en priorité
+    const prioritizedGateways = this.getPrioritizedGateways(baseGateways, ipfsHash);
+
+    // Fonction optimisée pour vérifier si une URL d'image est accessible
+    const checkImageUrl = async (url, timeout = 3000) => {
       try {
-        const response = await fetch(url, { 
-          method: 'HEAD', 
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const response = await fetch(url, {
+          method: 'HEAD',
+          signal: controller.signal,
+          cache: 'force-cache', // Utiliser le cache du navigateur
+          headers: {
+            'Accept': 'image/*',
+            'Cache-Control': 'max-age=3600' // Cache 1 heure
+          }
         });
-        
+
+        clearTimeout(timeoutId);
+
         if (response.ok) {
           const contentType = response.headers.get('content-type');
-          if (contentType && contentType.includes('image')) {
+          if (contentType && (contentType.includes('image') || contentType.includes('octet-stream'))) {
             return true;
           }
         }
@@ -794,22 +778,137 @@ class IPFSService {
         return false;
       }
     };
-    
-    // Vérifier chaque passerelle et retourner la première qui fonctionne
-    for (const gateway of imageGateways) {
-      const isValid = await checkImageUrl(gateway);
-      if (isValid) {
-        this.log(`Image IPFS trouvée sur: ${gateway}`, 'info');
-        return gateway;
+
+    // Tester les passerelles en parallèle (par groupes de 3 pour éviter la surcharge)
+    const batchSize = 3;
+    for (let i = 0; i < prioritizedGateways.length; i += batchSize) {
+      const batch = prioritizedGateways.slice(i, i + batchSize);
+
+      // Tester ce lot en parallèle
+      const promises = batch.map(async (gateway) => {
+        const isValid = await checkImageUrl(gateway);
+        return { gateway, isValid };
+      });
+
+      try {
+        const results = await Promise.allSettled(promises);
+
+        // Trouver la première passerelle qui fonctionne dans ce lot
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value.isValid) {
+            const workingUrl = result.value.gateway;
+
+            // Mettre en cache l'URL qui fonctionne
+            this.imageUrlCache.set(ipfsHash, workingUrl);
+
+            // Mettre à jour la liste des passerelles qui fonctionnent
+            this.updateWorkingGateways(workingUrl);
+
+            this.log(`Image IPFS trouvée sur: ${workingUrl}`, 'info');
+            return workingUrl;
+          }
+        }
+      } catch (error) {
+        this.log(`Erreur lors du test du lot de passerelles: ${error.message}`, 'warn');
       }
     }
-    
-    // Si aucune passerelle ne fonctionne, retourner quand même la première URL
-    // pour permettre au composant d'affichage de gérer l'erreur si nécessaire
-    this.log(`Aucune passerelle IPFS ne répond pour l'image: ${ipfsHash}`, 'warn');
-    return imageGateways[0];
+
+    // Si aucune passerelle ne fonctionne, utiliser la première avec cache négatif temporaire
+    const fallbackUrl = prioritizedGateways[0];
+    this.log(`Aucune passerelle IPFS ne répond pour l'image: ${ipfsHash}, utilisation du fallback`, 'warn');
+
+    // Cache négatif temporaire (5 minutes)
+    setTimeout(() => {
+      this.imageUrlCache.delete(ipfsHash);
+    }, 5 * 60 * 1000);
+
+    this.imageUrlCache.set(ipfsHash, fallbackUrl);
+    return fallbackUrl;
+  }
+
+  // Obtenir les passerelles priorisées en fonction des succès précédents
+  getPrioritizedGateways(baseGateways, ipfsHash) {
+    // Réorganiser les passerelles en fonction de celles qui ont fonctionné récemment
+    const prioritized = [...baseGateways];
+
+    // Mettre les passerelles qui fonctionnent en tête
+    if (this.workingGateways.length > 0) {
+      const workingUrls = this.workingGateways.map(gw =>
+        gw.replace(/\/ipfs\/.*$/, `/ipfs/${ipfsHash}`)
+      );
+
+      // Réorganiser pour mettre les passerelles qui fonctionnent en premier
+      const reordered = [
+        ...workingUrls.filter(url => prioritized.includes(url)),
+        ...prioritized.filter(url => !workingUrls.includes(url))
+      ];
+
+      return reordered;
+    }
+
+    return prioritized;
+  }
+
+  // Mettre à jour la liste des passerelles qui fonctionnent
+  updateWorkingGateways(workingUrl) {
+    const baseUrl = workingUrl.replace(/\/ipfs\/.*$/, '');
+
+    // Ajouter à la liste si pas déjà présent
+    if (!this.workingGateways.some(gw => gw.startsWith(baseUrl))) {
+      this.workingGateways.unshift(baseUrl); // Ajouter en tête
+
+      // Limiter à 5 passerelles mémorisées
+      if (this.workingGateways.length > 5) {
+        this.workingGateways = this.workingGateways.slice(0, 5);
+      }
+    }
+  }
+
+  // Nettoyer le cache périodiquement
+  clearImageCache() {
+    this.imageUrlCache.clear();
+    this.workingGateways = [];
+    this.log('Cache d\'images IPFS nettoyé', 'info');
+  }
+
+  // Initialiser le nettoyage automatique du cache
+  initAutoCacheCleanup() {
+    // Nettoyer le cache toutes les 30 minutes
+    setInterval(() => {
+      const cacheSize = this.imageUrlCache.size;
+      if (cacheSize > 100) { // Si le cache devient trop gros
+        this.log(`Nettoyage automatique du cache (${cacheSize} entrées)`, 'info');
+        this.clearImageCache();
+      }
+    }, 30 * 60 * 1000); // 30 minutes
+
+    // Nettoyer les entrées expirées toutes les 10 minutes
+    setInterval(() => {
+      const now = Date.now();
+      let cleanedCount = 0;
+
+      for (const [hash, url] of this.imageUrlCache.entries()) {
+        // Si l'URL contient un timestamp et qu'elle est expirée (plus de 1 heure)
+        if (url.includes('timestamp=')) {
+          const urlObj = new URL(url);
+          const timestamp = parseInt(urlObj.searchParams.get('timestamp') || '0');
+          if (now - timestamp > 60 * 60 * 1000) { // 1 heure
+            this.imageUrlCache.delete(hash);
+            cleanedCount++;
+          }
+        }
+      }
+
+      if (cleanedCount > 0) {
+        this.log(`Nettoyage automatique: ${cleanedCount} entrées expirées supprimées`, 'info');
+      }
+    }, 10 * 60 * 1000); // 10 minutes
   }
 }
 
 const ipfsService = new IPFSService();
+
+// Initialiser le nettoyage automatique du cache
+ipfsService.initAutoCacheCleanup();
+
 export default ipfsService;
