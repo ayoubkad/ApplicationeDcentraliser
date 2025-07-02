@@ -8,7 +8,7 @@ Cette application décentralisée (DApp) permet de gérer une bibliothèque univ
 
 ### Fonctionnalités principales
 
-- **Gestion des utilisateurs** : Inscription avec différents rôles (Étudiant, Professeur, Admin)
+- **Gestion des utilisateurs** : Inscription avec différents rôles (Étudiant, Professeur)
 - **Catalogue de livres** : Ajout, consultation et suppression de livres
 - **Système d'emprunt** : Emprunt et retour de livres avec dates limites
 - **Système de réputation** : Récompenses pour les retours à temps et pénalités pour les retards
