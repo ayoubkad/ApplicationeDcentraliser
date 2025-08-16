@@ -28,8 +28,7 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
     isbn: '', 
     pageCount: '', 
     publishedDate: '', 
-    description: '', 
-    price: '0' 
+    description: '' 
   });
   const [bookCover, setBookCover] = useState(null);
   const [bookCoverPreview, setBookCoverPreview] = useState('');
@@ -296,7 +295,6 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
             pageCount: newBook.pageCount,
             publishedDate: newBook.publishedDate,
             description: newBook.description,
-            price: newBook.price
           }
         }));
         
@@ -374,7 +372,6 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
       pageCount: '',
       publishedDate: '',
       description: '',
-      price: '0',
     });
     setBookCover(null);
     setBookCoverPreview('');
@@ -1755,24 +1752,6 @@ const AdminTab = ({ setNotification, isLoading, setIsLoading }) => {
                 className="w-full border rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-[#6A1B9A] focus:border-[#6A1B9A]"
                 placeholder="Nombre de pages"
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="price">
-                Prix (ETH)
-              </label>
-              <input
-                type="number"
-                id="price"
-                name="price"
-                value={newBook.price}
-                onChange={handleNewBookChange}
-                step="0.01"
-                min="0"
-                className="w-full border rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-[#6A1B9A] focus:border-[#6A1B9A]"
-                placeholder="Prix en ETH"
-              />
-              <p className="text-xs text-gray-500 mt-1">Le prix sera converti en Wei sur la blockchain</p>
             </div>
 
             <div>
