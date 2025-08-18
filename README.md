@@ -111,6 +111,23 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## 📚 Documentation Wiki
+
+For comprehensive documentation, guides, and tutorials, visit our **[Library DApp Wiki](docs/wiki/Home.md)**:
+
+### Quick Links
+- **🚀 [Getting Started](docs/wiki/Getting-Started.md)** - New user setup guide
+- **📖 [User Guide](docs/wiki/User-Guide.md)** - Complete user documentation  
+- **👨‍💼 [Admin Guide](docs/wiki/Admin-Guide.md)** - Administrative features
+- **👩‍💻 [Developer Guide](docs/wiki/Developer-Guide.md)** - Development setup and contribution
+- **🔧 [Troubleshooting](docs/wiki/Troubleshooting.md)** - Common issues and solutions
+- **❓ [FAQ](docs/wiki/FAQ.md)** - Frequently asked questions
+
+### By Role
+- **Students & Professors**: Start with [Getting Started](docs/wiki/Getting-Started.md)
+- **Administrators**: See [Admin Guide](docs/wiki/Admin-Guide.md)
+- **Developers**: Check [Developer Guide](docs/wiki/Developer-Guide.md)
+
 ## Contact
 
-For questions or suggestions, please open an issue on GitHub.
+For questions or suggestions, please open an issue on GitHub or check our [FAQ](docs/wiki/FAQ.md).
