@@ -21,6 +21,7 @@
     "dotenv": "^16.5.0",
     "framer-motion": "^12.10.5",
     "ipfs-http-client": "^60.0.1",
+    "ipfs-only-hash": "^4.0.0",
     "library-dapp": "file:",
     "lucide-react": "^0.294.0",
     "react": "^18.3.1",
