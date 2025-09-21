@@ -54,13 +54,14 @@ class IPFSService {
   }
 
   // Téléchargement optimisé d'un PDF depuis IPFS avec gestion des erreurs et timeout
-  async downloadPdfFromIPFS(cid) {
+  async downloadPdfFromIPFS(cid, abortController = null) {
     if (!this.isValidCid(cid)) {
       this.log(`CID IPFS invalide: ${cid}`, 'error');
       throw new Error('CID IPFS invalide');
     }
 
-    const controller = new AbortController();
+    // Utiliser l'AbortController fourni ou en créer un nouveau
+    const controller = abortController || new AbortController();
     
     // Fonction pour créer une promesse avec timeout et progression
     const createTimeoutPromise = (ms, onProgress) => {
@@ -362,7 +363,7 @@ class IPFSService {
   }
 
   // Nouvelle méthode optimisée pour le téléchargement de PDF
-  async downloadPDF(ipfsHash, fileName = 'document.pdf') {
+  async downloadPDF(ipfsHash, fileName = 'document.pdf', abortController = null) {
     console.log("Début du téléchargement PDF pour le hash:", ipfsHash);
     
     if (!ipfsHash) {
@@ -385,8 +386,8 @@ class IPFSService {
     this.log(`Tentative de téléchargement du PDF: ${ipfsHash}`);
     
     try {
-      // Utiliser la nouvelle fonction de téléchargement optimisée
-      const result = await this.downloadPdfFromIPFS(ipfsHash);
+      // Utiliser la nouvelle fonction de téléchargement optimisée avec AbortController
+      const result = await this.downloadPdfFromIPFS(ipfsHash, abortController);
       
       if (!result || !result.blob) {
         throw new Error("Échec de récupération du fichier PDF");

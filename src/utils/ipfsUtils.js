@@ -71,12 +71,13 @@ const testUrlAccess = async (url) => {
  * @param {string} cid - Le CID du fichier à télécharger
  * @returns {Promise<Object>} - Objet contenant le blob et l'URL
  */
-export const downloadPdfFromIPFS = async (cid) => {
+export const downloadPdfFromIPFS = async (cid, abortController = null) => {
   if (!isValidCid(cid)) {
     throw new Error('CID IPFS invalide');
   }
 
-  const controller = new AbortController();
+  // Utiliser l'AbortController fourni ou en créer un nouveau
+  const controller = abortController || new AbortController();
   
   try {
     let lastError;

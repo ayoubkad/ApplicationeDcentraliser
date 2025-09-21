@@ -644,7 +644,10 @@ const App = () => {
     // Le catalogue est accessible sans connexion
     if (tab === 'catalog') return false;
 
-    // Si l'utilisateur n'est pas connecté, désactiver tous les onglets sauf accueil, catalogue et inscription
+    // L'explorateur est accessible sans connexion
+    if (tab === 'explorer') return false;
+
+    // Si l'utilisateur n'est pas connecté, désactiver tous les onglets sauf accueil, catalogue, explorateur et inscription
     if (!isConnected && tab !== 'login') return true;
 
     // Si l'utilisateur est un administrateur

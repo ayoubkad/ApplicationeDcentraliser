@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ipfsService from '../../services/IPFSService';
 import { toast } from 'react-hot-toast';
-import { Download, FileCheck, AlertTriangle, Clock } from 'lucide-react';
+import { Download, FileCheck, AlertTriangle, Clock, X } from 'lucide-react';
 
 // Composant de téléchargement direct de PDF par CID IPFS
 const PdfDownloader = () => {
@@ -9,6 +9,9 @@ const PdfDownloader = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState('document.pdf');
   const [progress, setProgress] = useState(0);
+  const abortControllerRef = useRef(null);
+  const safetyTimerRef = useRef(null);
+  const loadingToastIdRef = useRef(null);
 
   // Écouter les événements de progression de téléchargement
   useEffect(() => {
@@ -25,6 +28,29 @@ const PdfDownloader = () => {
     };
   }, [isLoading]);
 
+  // Cleanup function pour annuler les opérations en cours
+  const stopDownload = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    if (safetyTimerRef.current) {
+      clearTimeout(safetyTimerRef.current);
+      safetyTimerRef.current = null;
+    }
+    
+    if (loadingToastIdRef.current) {
+      toast.dismiss(loadingToastIdRef.current);
+      loadingToastIdRef.current = null;
+    }
+    
+    setIsLoading(false);
+    setProgress(0);
+    
+    toast.info('Téléchargement annulé par l\'utilisateur', { duration: 3000 });
+  };
+
   const handleDownload = async (e) => {
     e.preventDefault();
     
@@ -38,6 +64,9 @@ const PdfDownloader = () => {
     if (!ipfsService.isValidCid(trimmedCid) && !trimmedCid.startsWith('ipfs://')) {
       toast.warning('Ce CID IPFS semble invalide. Tentative de téléchargement quand même...');
     }
+    
+    // Créer un nouvel AbortController pour cette opération
+    abortControllerRef.current = new AbortController();
     
     setIsLoading(true);
     setProgress(0);
@@ -57,20 +86,35 @@ const PdfDownloader = () => {
       { duration: 30000 } // Timeout de 30 secondes
     );
     
+    loadingToastIdRef.current = loadingToastId;
+    
     // Timer de sécurité supplémentaire pour s'assurer que le toast disparaît
     const safetyTimer = setTimeout(() => {
-      toast.dismiss(loadingToastId);
-      toast.error('Le téléchargement prend plus de temps que prévu. Veuillez réessayer ou utiliser un lien direct.', {
-        duration: 5000
-      });
+      if (loadingToastIdRef.current) {
+        toast.dismiss(loadingToastIdRef.current);
+        toast.error('Le téléchargement prend plus de temps que prévu. Veuillez réessayer ou utiliser un lien direct.', {
+          duration: 5000
+        });
+        loadingToastIdRef.current = null;
+      }
     }, 45000); // 45 secondes
     
+    safetyTimerRef.current = safetyTimer;
+    
     try {
-      // Utiliser le service IPFS pour télécharger le PDF
-      const result = await ipfsService.downloadPDF(trimmedCid, fileName);
+      // Utiliser le service IPFS pour télécharger le PDF avec AbortController
+      const result = await ipfsService.downloadPDF(trimmedCid, fileName, abortControllerRef.current);
+      
+      // Vérifier si l'opération a été annulée
+      if (abortControllerRef.current?.signal.aborted) {
+        return;
+      }
       
       // Annuler le timer de sécurité
-      clearTimeout(safetyTimer);
+      if (safetyTimerRef.current) {
+        clearTimeout(safetyTimerRef.current);
+        safetyTimerRef.current = null;
+      }
       
       // Signaler que le téléchargement est terminé
       setProgress(100);
@@ -87,11 +131,22 @@ const PdfDownloader = () => {
     } catch (error) {
       console.error('Erreur de téléchargement:', error);
       
+      // Si l'erreur est due à une annulation, ne pas afficher d'erreur
+      if (error.name === 'AbortError' || error.message.includes('aborted')) {
+        return;
+      }
+      
       // Annuler le timer de sécurité
-      clearTimeout(safetyTimer);
+      if (safetyTimerRef.current) {
+        clearTimeout(safetyTimerRef.current);
+        safetyTimerRef.current = null;
+      }
       
       // Fermer le toast de chargement
-      toast.dismiss(loadingToastId);
+      if (loadingToastIdRef.current) {
+        toast.dismiss(loadingToastIdRef.current);
+        loadingToastIdRef.current = null;
+      }
       
       // Créer des URLs alternatives pour un accès direct
       const cidToUse = trimmedCid.startsWith('ipfs://') ? trimmedCid.substring(7) : trimmedCid;
@@ -139,6 +194,9 @@ const PdfDownloader = () => {
     } finally {
       setIsLoading(false);
       setProgress(0);
+      abortControllerRef.current = null;
+      safetyTimerRef.current = null;
+      loadingToastIdRef.current = null;
     }
   };
 
@@ -211,25 +269,36 @@ const PdfDownloader = () => {
           </span>
         </div>
         
-        <button
-          type="submit"
-          disabled={isLoading}
-          className={`w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#2A3B8C] hover:bg-[#1F2D6B] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2A3B8C] ${
-            isLoading ? 'opacity-70 cursor-not-allowed' : ''
-          }`}
-        >
-          {isLoading ? (
-            <>
-              <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-              Téléchargement...
-            </>
-          ) : (
-            <>
+        <div className="space-y-3">
+          {!isLoading ? (
+            <button
+              type="submit"
+              className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#2A3B8C] hover:bg-[#1F2D6B] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2A3B8C]"
+            >
               <Download className="mr-2 h-4 w-4" />
               Télécharger le PDF
-            </>
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <button
+                type="button"
+                disabled
+                className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#2A3B8C] opacity-70 cursor-not-allowed"
+              >
+                <div className="animate-spin mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                Téléchargement...
+              </button>
+              <button
+                type="button"
+                onClick={stopDownload}
+                className="w-full flex justify-center items-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                <X className="mr-2 h-4 w-4" />
+                Annuler le téléchargement
+              </button>
+            </div>
           )}
-        </button>
+        </div>
       </form>
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Layers, CreditCard, Activity, RefreshCw, Search, ChevronRight, ChevronDown, Clock, Hash, DollarSign, FileText } from 'lucide-react';
 import web3Service from '../../services/Web3Service';
+import PdfDownloader from '../common/PdfDownloader';
 import '../../styles/tutoreel-design.css';
 import '../../styles/tutoreel-application.css';
 
@@ -369,6 +370,16 @@ const BlockchainExplorer = () => {
                 onClick={() => setActiveTab('accounts')}
               >
                 <CreditCard size={18} className="mr-2" /> Comptes
+              </button>
+              <button
+                className={`tutoreel-btn flex-1 px-6 py-3 rounded-xl transition-all duration-300 ${
+                  activeTab === 'ipfs'
+                    ? 'tutoreel-btn-primary'
+                    : 'tutoreel-btn-secondary hover:bg-indigo-50'
+                }`}
+                onClick={() => setActiveTab('ipfs')}
+              >
+                <FileText size={18} className="mr-2" /> Téléchargeur IPFS
               </button>
             </div>
           </div>
@@ -800,6 +811,21 @@ const BlockchainExplorer = () => {
                     })}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* Onglet Téléchargeur IPFS avec design Tutoreel */}
+          {activeTab === 'ipfs' && (
+            <div className="animate-fadeIn">
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-2xl font-bold text-indigo-800 flex items-center">
+                  <FileText className="mr-3" size={28} />
+                  Téléchargeur de fichiers IPFS
+                </h2>
+              </div>
+              <div className="max-w-2xl mx-auto">
+                <PdfDownloader />
               </div>
             </div>
           )}
