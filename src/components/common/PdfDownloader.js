@@ -62,7 +62,10 @@ const PdfDownloader = () => {
     
     // Vérification basique de la validité du CID
     if (!ipfsService.isValidCid(trimmedCid) && !trimmedCid.startsWith('ipfs://')) {
-      toast.warning('Ce CID IPFS semble invalide. Tentative de téléchargement quand même...');
+      toast('Ce CID IPFS semble invalide. Tentative de téléchargement quand même...', {
+        icon: '⚠️',
+        duration: 4000,
+      });
     }
     
     // Créer un nouvel AbortController pour cette opération
@@ -70,6 +73,10 @@ const PdfDownloader = () => {
     
     setIsLoading(true);
     setProgress(0);
+    console.log('Setting isLoading to true');
+    
+    // Small delay to ensure UI updates
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     // Utiliser un toast persistant pour montrer la progression, mais avec une durée maximale
     const loadingToastId = toast.loading(
@@ -192,6 +199,7 @@ const PdfDownloader = () => {
         { duration: 15000 }
       );
     } finally {
+      console.log('Setting isLoading to false');
       setIsLoading(false);
       setProgress(0);
       abortControllerRef.current = null;
