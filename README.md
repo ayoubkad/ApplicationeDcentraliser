@@ -2,7 +2,7 @@
 
 A decentralized library management application built on Ethereum blockchain, IPFS, and React.
 
-![Library DApp](https://via.placeholder.com/800x400?text=Library+DApp)
+![Library DApp](./Diagramme/Screenshot%202025-09-28%20220615.png)
 
 ## Overview
 
