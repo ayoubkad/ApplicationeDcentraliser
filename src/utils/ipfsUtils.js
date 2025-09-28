@@ -5,8 +5,10 @@
 
 // Configurations centralisées
 const IPFS_GATEWAYS = [
+  // Passerelles locales - HTTP nécessaire pour le développement local
   'http://localhost:8080/ipfs/',
   'http://127.0.0.1:8080/ipfs/',
+  // Passerelles publiques sécurisées - HTTPS uniquement
   'https://ipfs.io/ipfs/',
   'https://cloudflare-ipfs.com/ipfs/',
   'https://dweb.link/ipfs/',
@@ -32,6 +34,32 @@ const CORS_PROXIES = [
 const DEFAULT_TIMEOUT = 45000; // Augmenté à 45 secondes
 const IFRAME_TIMEOUT = 20000; // Augmenté à 20 secondes
 const MAX_RETRIES = 2; // Nombre de tentatives par passerelle
+
+/**
+ * Détermine si nous sommes dans un contexte sécurisé (HTTPS)
+ * @returns {boolean} - True si nous sommes en HTTPS
+ */
+const isSecureContext = () => {
+  return window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+};
+
+/**
+ * Filtre les passerelles en fonction du contexte de sécurité
+ * @param {Array} gateways - Liste des passerelles
+ * @returns {Array} - Passerelles filtrées
+ */
+const getSecureGateways = (gateways) => {
+  const isSecure = isSecureContext();
+  if (isSecure && window.location.protocol === 'https:') {
+    // En HTTPS, privilégier les passerelles HTTPS mais garder localhost HTTP pour le développement
+    return gateways.filter(gateway => 
+      gateway.startsWith('https://') || 
+      gateway.includes('localhost') || 
+      gateway.includes('127.0.0.1')
+    );
+  }
+  return gateways;
+};
 
 /**
  * Validation du CID (Content ID) IPFS
@@ -129,9 +157,12 @@ export const downloadPdfFromIPFS = async (cid) => {
     // Si on arrive ici, on utilise les méthodes standard pour les passerelles distantes
     let successfulGateways = [];
     
+    // Filtrer les passerelles selon le contexte de sécurité
+    const secureGateways = getSecureGateways(IPFS_GATEWAYS);
+    
     // Tester l'accessibilité des passerelles en parallèle
     if (isDev) {
-      const gatewayTests = IPFS_GATEWAYS.map(async (gateway) => {
+      const gatewayTests = secureGateways.map(async (gateway) => {
         const url = `${gateway}${cid}`;
         const isAccessible = await testUrlAccess(url);
         if (isAccessible) {
@@ -150,11 +181,11 @@ export const downloadPdfFromIPFS = async (cid) => {
         }));
       }
     } else {
-      successfulGateways = IPFS_GATEWAYS;
+      successfulGateways = secureGateways;
     }
 
     // 1. D'abord essayer les passerelles directes qui fonctionnent
-    const gatewaysToTry = successfulGateways.length > 0 ? successfulGateways : IPFS_GATEWAYS;
+    const gatewaysToTry = successfulGateways.length > 0 ? successfulGateways : secureGateways;
     
     // Vérifier s'il y a une passerelle locale
     const hasLocalGateway = gatewaysToTry.some(g => g.includes('localhost'));
@@ -348,6 +379,9 @@ export const downloadPdfFromIPFS = async (cid) => {
         iframe.style.left = '0';
         iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
         iframe.setAttribute('allowfullscreen', 'true');
+        // Ajouter des attributs de sécurité pour le contenu mixte
+        iframe.setAttribute('loading', 'lazy');
+        iframe.setAttribute('referrerpolicy', 'no-referrer');
         document.body.appendChild(iframe);
         
         const iframePromise = new Promise((resolve, reject) => {
@@ -406,9 +440,10 @@ export const downloadPdfFromIPFS = async (cid) => {
         iframe.style.display = 'none';
         document.body.appendChild(iframe);
 
-        // Limiter les tentatives aux 3 premières passerelles 
+        // Limiter les tentatives aux 3 premières passerelles sécurisées
         // (puisque si on arrive ici, les passerelles ont déjà échoué une fois)
-        const gatewaysToAttempt = IPFS_GATEWAYS.slice(0, 3);
+        const secureGatewaysForIframe = getSecureGateways(IPFS_GATEWAYS);
+        const gatewaysToAttempt = secureGatewaysForIframe.slice(0, 3);
         let attemptIndex = 0;
 
         const tryNextGateway = () => {
@@ -490,7 +525,8 @@ export const downloadPdfFromIPFS = async (cid) => {
     }
 
     // 4. Solution de secours: proposer un lien direct
-    const directLinks = IPFS_GATEWAYS.map(gateway => `${gateway}${cid}`);
+    const secureGatewaysForFallback = getSecureGateways(IPFS_GATEWAYS);
+    const directLinks = secureGatewaysForFallback.map(gateway => `${gateway}${cid}`);
     const errorMessage = `Toutes les tentatives de téléchargement ont échoué. Essayez d'ouvrir l'un de ces liens directement dans un nouvel onglet: ${directLinks.join(', ')}`;
     console.error(errorMessage);
     
